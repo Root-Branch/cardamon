@@ -1,0 +1,18 @@
+metric_server = "http://localhost:8000" # default
+scenarios_dir = "./scenarios"           # default
+telegraf_conf = "./telegraf.conf"       # default
+interval = "5s"                         # default
+
+[application]
+cpu_tdp = 23
+carbon_intensity = 180
+
+[[process]]
+name = "accuheat_client_db"
+type = "docker"
+
+[[process]]
+name = "accuheat_client"
+type = "proc"
+cpu_tdp = 12
+carbon_intensity = 160
