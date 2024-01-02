@@ -4,15 +4,9 @@ telegraf_conf = "./telegraf.conf"       # default
 interval = "5s"                         # default
 
 [application]
+processes.docker = ["accuheat_client_db"]
+processes.metal = ["accuheat_client"]
+
+[scenario_runner]
 cpu_tdp = 23
-carbon_intensity = 180
 
-[[process]]
-name = "accuheat_client_db"
-type = "docker"
-
-[[process]]
-name = "accuheat_client"
-type = "proc"
-cpu_tdp = 12
-carbon_intensity = 160

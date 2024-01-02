@@ -5,7 +5,6 @@
  */
 
 use chrono::NaiveDateTime;
-use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -24,15 +23,13 @@ pub struct Scenario {
 pub struct ScenarioSummaryOpts {
     pub scenarios: Vec<String>,
     pub last_n: u8,
-    pub cpu_tdp: HashMap<String, f64>,
-    pub carbon_intensity: HashMap<String, f64>,
+    pub cpu_tdp: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProcessStats {
     pub process_name: String,
     pub energy_consumption_w: f64,
-    pub carbon_emissions_g: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -46,11 +43,6 @@ pub struct ScenarioRunStats {
     pub scenario_name: String,
     pub run_stats: Vec<RunStats>,
 }
-
-// #[derive(Serialize, Deserialize, Debug)]
-// pub struct Stats {
-//     pub
-// }
 
 // DOCKER FIELDS & TAGS
 // ############################################################################

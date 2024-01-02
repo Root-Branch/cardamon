@@ -100,14 +100,11 @@ fn create_process_stats(
     process_name: String,
     metrics: Vec<GetCpuMetrics>,
     tdp_w: f64,
-    ci_g_kwh: f64,
 ) -> dto::ProcessStats {
     struct MetricSlice {
         value: f64,
         dt_ms: i64,
     }
-
-    let ci_gw = ci_g_kwh / (1000.0 * 3600.0);
 
     let slices = metrics
         .iter()
@@ -122,15 +119,10 @@ fn create_process_stats(
         acc + b.value * (b.dt_ms as f64 * tdp_w) / 1000.0
     });
 
-    let carbon_emissions_g = energy_consumption_w * ci_gw;
-
-    let process_stats = dto::ProcessStats {
+    dto::ProcessStats {
         process_name,
         energy_consumption_w,
-        carbon_emissions_g,
-    };
-
-    process_stats
+    }
 }
 
 async fn create_summary(
@@ -172,10 +164,7 @@ async fn create_summary(
                 .group_by(|x| x.metrics.container_name.clone())
                 .into_iter()
                 .map(|(process_name, metrics)| {
-                    let tdp_w = *body.cpu_tdp.get(&process_name).unwrap_or(&0.0);
-                    let ci_g_kwh = *body.carbon_intensity.get(&process_name).unwrap_or(&0.0);
-
-                    create_process_stats(process_name, metrics.collect_vec(), tdp_w, ci_g_kwh)
+                    create_process_stats(process_name, metrics.collect_vec(), body.cpu_tdp)
                 })
                 .collect::<Vec<_>>();
 
@@ -202,9 +191,9 @@ pub fn start(db: Db) -> JoinHandle<()> {
             .route("/scenario_summary", get(create_summary))
             .with_state(db);
 
-        // run our app with hyper, listening globally on port 3000
-        info!("Starting server on localhost:8000");
-        let listener = tokio::net::TcpListener::bind("localhost:8000")
+        // run our app with hyper, listening globally on port 2050
+        info!("Starting server on localhost:2050");
+        let listener = tokio::net::TcpListener::bind("localhost:2050")
             .await
             .unwrap();
         axum::serve(listener, app).await.unwrap();

@@ -10,59 +10,149 @@ pub mod metrics_server;
 pub mod scenario_runner;
 pub mod telegraf;
 
-use crate::metrics_server::dto::{ScenarioRunStats, ScenarioSummaryOpts};
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{command, Args, Parser, Subcommand};
 use diesel::{prelude::*, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenv::dotenv;
+use log::info;
 use nanoid::nanoid;
-use std::collections::HashMap;
 use std::{
-    fs::File,
+    fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::time::sleep;
 
+use crate::metrics_server::dto;
+
 type DB = diesel::sqlite::Sqlite;
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 #[derive(Parser)]
 #[command(author = "Oliver Winks (@ohuu)", version, about, long_about = None)]
-#[command(propagate_version = true)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-
-    /// Path to telegraf conf
-    #[arg(short, long)]
-    conf: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run scenarios
+    /// Scenario commands
+    Scenario(ScenarioArgs),
+
+    /// Telemetry server commands
+    #[command(visible_alias = "server")]
+    TelemetryServer(TelemetryServerArgs),
+}
+
+#[derive(Args)]
+struct ScenarioArgs {
+    #[command(subcommand)]
+    command: ScenarioCommands,
+
+    /// Path to scenario scripts
+    #[arg(long, short)]
+    path: Option<PathBuf>,
+
+    /// Path to telegraf conf
+    #[arg(long, short)]
+    telegraf_conf: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
+enum ScenarioCommands {
     Run {
-        /// Path to scenario scripts
-        path: Option<PathBuf>,
-
-        #[arg(long, default_value_t = 12)]
-        cpu_tdp: u16,
-
-        #[arg(long, default_value_t = 160)]
-        carbon_intensity: u16,
+        #[arg(long, short)]
+        scenario: Option<String>,
     },
 }
+
+#[derive(Args)]
+struct TelemetryServerArgs {
+    #[command(subcommand)]
+    command: TelemetryServerCommands,
+}
+
+#[derive(Subcommand)]
+enum TelemetryServerCommands {
+    Run {
+        /// Port to start server on
+        #[arg(long, short, default_value_t = 2050)]
+        port: i32,
+    },
+}
+
 fn run_migrations(db_conn: &mut impl MigrationHarness<DB>) {
     db_conn
         .run_pending_migrations(MIGRATIONS)
         .expect("Failed to migrate the cardamon database!");
 }
 
+async fn init_scenario_run(
+    state: Arc<Mutex<SqliteConnection>>,
+    telegraf_conf_path: PathBuf,
+) -> anyhow::Result<String> {
+    // create a unique cardamon label for this scenario
+    let cardamon_run_id = nanoid!();
+    let cardamon_run_type = String::from("SCENARIO");
+
+    // start the metric server
+    metrics_server::start(state);
+
+    // start telegraf
+    telegraf::start(
+        telegraf_conf_path,
+        cardamon_run_type,
+        cardamon_run_id.clone(),
+        String::from("http://localhost:2050"),
+    );
+
+    // wait a second for telegraf to start
+    sleep(Duration::from_millis(1000)).await;
+
+    Ok(cardamon_run_id)
+}
+
+fn generate_scenario_summary(scenarios: Vec<String>) -> anyhow::Result<String> {
+    // generate carbon summary
+    let summary_opts = dto::ScenarioSummaryOpts {
+        scenarios,
+        last_n: 3,
+        cpu_tdp: 23.0,
+    };
+
+    // request summary of scenario run compared to previous runs
+    let stats = ureq::get("http://localhost:2050/scenario_summary")
+        .send_json(ureq::json!(summary_opts))
+        .map(|res| res.into_json::<Vec<dto::ScenarioRunStats>>())?;
+
+    stats
+        .map(|stats| {
+            let mut summary = String::new();
+            for stats in stats {
+                summary.push_str(&format!("\n{}", stats.scenario_name));
+                for stats in stats.run_stats {
+                    summary.push_str(&format!(
+                        "\n\t + [{}]",
+                        stats.start_time.format("%Y-%m-%d @ %H:%M")
+                    ));
+                    for stats in stats.process_stats {
+                        summary.push_str(&format!(
+                            "\n\t\t {:}: \t{:.2}",
+                            stats.process_name, stats.energy_consumption_w,
+                        ));
+                    }
+                }
+            }
+
+            summary
+        })
+        .map_err(|err| anyhow::anyhow!(format!("{}", err.to_string())))
+}
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     env_logger::init();
 
@@ -70,7 +160,7 @@ async fn main() -> Result<()> {
 
     // check if cardamon database has been built
     if !Path::new(&database_url).exists() {
-        if File::create(&database_url).is_err() {
+        if fs::File::create(&database_url).is_err() {
             panic!("Error creating database file")
         }
     }
@@ -83,68 +173,53 @@ async fn main() -> Result<()> {
 
     // run the scenarios
     match &cli.command {
-        Commands::Run {
-            path,
-            cpu_tdp: _,
-            carbon_intensity: _,
-        } => {
-            // create a unique cardamon label for this scenario
-            let cardamon_run_id = nanoid!();
-            let cardamon_run_type = "SCENARIO";
+        Commands::Scenario(args) => {
+            let telegraf_conf_path = args.telegraf_conf.clone().unwrap_or("telegraf.conf".into());
+            let scenarios_path = args.path.clone().unwrap_or("scenarios".into());
 
-            // create state
-            let state = Arc::new(Mutex::new(db_conn));
+            match &args.command {
+                ScenarioCommands::Run { scenario: None } => {
+                    let cardamon_run_id =
+                        init_scenario_run(Arc::new(Mutex::new(db_conn)), telegraf_conf_path)
+                            .await?;
 
-            // start the metric server
-            metrics_server::start(state.clone());
+                    let mut scenarios_run: Vec<String> = vec![];
 
-            // start telegraf
-            let conf_path = cli.conf.unwrap_or(PathBuf::from("telegraf.conf"));
-            telegraf::start(
-                conf_path,
-                String::from("SCENARIO"),
-                cardamon_run_id.clone(),
-                String::from("http://localhost:8000"),
-            );
-
-            // wait a second for telegraf to start
-            sleep(Duration::from_millis(1000)).await;
-
-            // run scenarios
-            let default_path = PathBuf::from("scenarios");
-            let scenarios_path = path.as_ref().unwrap_or(&default_path);
-            let scenarios =
-                scenario_runner::run(scenarios_path, &cardamon_run_type, &cardamon_run_id).await?;
-
-            // generate carbon summary
-            let summary_opts = ScenarioSummaryOpts {
-                scenarios,
-                last_n: 3,
-                carbon_intensity: HashMap::from([(String::from("accuheat_client_db"), 180.0)]),
-                cpu_tdp: HashMap::from([(String::from("accuheat_client_db"), 23.0)]),
-            };
-
-            let res = ureq::get("http://localhost:8000/scenario_summary")
-                .send_json(ureq::json!(summary_opts))?;
-
-            let stats = res.into_json::<Vec<ScenarioRunStats>>();
-            if let Ok(stats) = stats {
-                for stats in stats {
-                    println!("\n+ {}", stats.scenario_name);
-                    for stats in stats.run_stats {
-                        println!("\t + [{}]", stats.start_time.format("%Y-%m-%d @ %H:%M"));
-                        for stats in stats.process_stats {
-                            println!(
-                                "\t\t {:}: \t{:.2} W \t{:.5} mgCO2eq",
-                                stats.process_name,
-                                stats.energy_consumption_w,
-                                stats.carbon_emissions_g * 1000.0
-                            );
+                    let dir_entries = fs::read_dir(scenarios_path)?;
+                    for dir_entry in dir_entries {
+                        let scenario_path = dir_entry?.path();
+                        match scenario_runner::run(&scenario_path, &cardamon_run_id).await {
+                            Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
+                            Err(_err) => {}
                         }
+                    }
+
+                    let summary = generate_scenario_summary(scenarios_run)?;
+                    println!("{}", summary);
+                }
+
+                ScenarioCommands::Run {
+                    scenario: Some(scenario),
+                } => {
+                    let cardamon_run_id =
+                        init_scenario_run(Arc::new(Mutex::new(db_conn)), telegraf_conf_path)
+                            .await?;
+
+                    let scenario_path = scenarios_path.join(scenario);
+
+                    match scenario_runner::run(&scenario_path, &cardamon_run_id).await {
+                        Ok(_scenario_name) => {}
+                        Err(_err) => {}
                     }
                 }
             }
         }
+
+        Commands::TelemetryServer(args) => match args.command {
+            TelemetryServerCommands::Run { port } => {
+                info!("running server on port {}", port);
+            }
+        },
     }
 
     Ok(())
