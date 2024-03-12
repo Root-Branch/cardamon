@@ -52,7 +52,7 @@ struct ScenarioArgs {
     command: ScenarioCommands,
 
     /// Path to scenario scripts
-    #[arg(long, short)]
+    #[arg(long, short, required = true)]
     path: Option<PathBuf>,
 
     /// Path to telegraf conf
@@ -184,14 +184,23 @@ async fn main() -> anyhow::Result<()> {
                             .await?;
 
                     let mut scenarios_run: Vec<String> = vec![];
-
-                    let dir_entries = fs::read_dir(scenarios_path)?;
-                    for dir_entry in dir_entries {
-                        let scenario_path = dir_entry?.path();
-                        match scenario_runner::run(&scenario_path, &cardamon_run_id).await {
+                    // Check for single file / directory input
+                    if scenarios_path.is_dir() {
+                        let dir_entries = fs::read_dir(scenarios_path)?;
+                        for dir_entry in dir_entries {
+                            let scenario_path = dir_entry?.path();
+                            match scenario_runner::run(&scenario_path, &cardamon_run_id).await {
+                                Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
+                                Err(_err) => {}
+                            }
+                        }
+                    } else if scenarios_path.is_file() {
+                        match scenario_runner::run(&scenarios_path, &cardamon_run_id).await {
                             Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
                             Err(_err) => {}
                         }
+                    } else {
+                        eprintln!("{:?}, is not a valid directory or file", scenarios_path);
                     }
 
                     let summary = generate_scenario_summary(scenarios_run)?;
