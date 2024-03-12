@@ -14,6 +14,7 @@ _Copyright © 2023 Oliver Winks_
 - [Scenario Runner](#scenario-runner)
   - [Specifying a scenario](#specifying-a-scenario)
   - [Running](#running)
+- [Requirements](#requirements)
 - [Live Dashboard](#live-dashboard)
   - [Deployment](#deployment)
 - [CLI Reference](#cli-reference)
