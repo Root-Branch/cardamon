@@ -15,7 +15,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::NaiveDateTime;
+use chrono::DateTime;
 use diesel::{prelude::*, RunQueryDsl, SqliteConnection};
 use itertools::Itertools;
 use log::info;
@@ -35,8 +35,12 @@ async fn insert_scenario_run(
             cardamon_run_type: body.cardamon_run_type,
             cardamon_run_id: body.cardamon_run_id,
             scenario_name: body.scenario_name,
-            start_time: NaiveDateTime::from_timestamp_millis(body.start_time).unwrap(),
-            stop_time: NaiveDateTime::from_timestamp_millis(body.stop_time).unwrap(),
+            start_time: DateTime::from_timestamp_millis(body.start_time)
+                .unwrap()
+                .naive_utc(),
+            stop_time: DateTime::from_timestamp_millis(body.stop_time)
+                .unwrap()
+                .naive_utc(),
         },
     };
 
@@ -77,7 +81,7 @@ async fn insert_metrics(
                         usage_percent: fields.usage_percent,
                         usage_system: fields.usage_system,
                         usage_total: fields.usage_total,
-                        timestamp: NaiveDateTime::from_timestamp_opt(timestamp, 0).unwrap(),
+                        timestamp: DateTime::from_timestamp(timestamp, 0).unwrap().naive_utc(),
                     },
                 };
 
@@ -111,7 +115,8 @@ fn create_process_stats(
         .tuple_windows()
         .map(|(a, b)| MetricSlice {
             value: a.metrics.usage_percent,
-            dt_ms: b.metrics.timestamp.timestamp_millis() - a.metrics.timestamp.timestamp_millis(),
+            dt_ms: b.metrics.timestamp.and_utc().timestamp_millis()
+                - a.metrics.timestamp.and_utc().timestamp_millis(),
         })
         .collect::<Vec<_>>();
 
