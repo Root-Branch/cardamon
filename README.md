@@ -33,6 +33,9 @@ Use this mode to compare your application with previous runs on a standard set o
 ### specifying a scenario
 
 ### running
+## Requirements
+Telegraf - https://www.influxdata.com/time-series-platform/telegraf/
+Node - https://nodejs.org/en
 
 ## Live Dashboard
 

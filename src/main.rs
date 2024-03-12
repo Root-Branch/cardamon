@@ -11,6 +11,7 @@ pub mod scenario_runner;
 pub mod telegraf;
 
 use clap::{command, Args, Parser, Subcommand};
+use core::panic;
 use diesel::{prelude::*, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenv::dotenv;
@@ -19,6 +20,7 @@ use nanoid::nanoid;
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::Command,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -150,9 +152,24 @@ fn generate_scenario_summary(scenarios: Vec<String>) -> anyhow::Result<String> {
         })
         .map_err(|err| anyhow::anyhow!(format!("{}", err.to_string())))
 }
-
+fn check_requirements() {
+    //check for telegraf installation
+    let _ = Command::new("telegraf")
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|_| {
+            panic!("Failed to execute 'telegraf --version' command. Is Telegraf installed?")
+        });
+    let _ = Command::new("node")
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|_| {
+            panic!("Failed to execute 'node --version' command. Is Node installed?")
+        });
+}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    check_requirements();
     dotenv().ok();
     env_logger::init();
 
