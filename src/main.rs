@@ -152,6 +152,7 @@ fn generate_scenario_summary(scenarios: Vec<String>) -> anyhow::Result<String> {
         })
         .map_err(|err| anyhow::anyhow!(format!("{}", err.to_string())))
 }
+// Check for installation dependancies to prevent running without telegraf / node installed
 fn check_requirements() {
     //check for telegraf installation
     let _ = Command::new("telegraf")
@@ -160,6 +161,7 @@ fn check_requirements() {
         .unwrap_or_else(|_| {
             panic!("Failed to execute 'telegraf --version' command. Is Telegraf installed?")
         });
+    //check for node installation
     let _ = Command::new("node")
         .arg("--version")
         .output()
