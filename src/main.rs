@@ -11,6 +11,7 @@ pub mod scenario_runner;
 pub mod telegraf;
 
 use clap::{command, Args, Parser, Subcommand};
+use core::panic;
 use diesel::{prelude::*, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenv::dotenv;
@@ -19,6 +20,7 @@ use nanoid::nanoid;
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::Command,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -52,7 +54,7 @@ struct ScenarioArgs {
     command: ScenarioCommands,
 
     /// Path to scenario scripts
-    #[arg(long, short)]
+    #[arg(long, short, required = true)]
     path: Option<PathBuf>,
 
     /// Path to telegraf conf
@@ -150,9 +152,26 @@ fn generate_scenario_summary(scenarios: Vec<String>) -> anyhow::Result<String> {
         })
         .map_err(|err| anyhow::anyhow!(format!("{}", err.to_string())))
 }
-
+// Check for installation dependancies to prevent running without telegraf / node installed
+fn check_requirements() {
+    //check for telegraf installation
+    let _ = Command::new("telegraf")
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|_| {
+            panic!("Failed to execute 'telegraf --version' command. Is Telegraf installed?")
+        });
+    //check for node installation
+    let _ = Command::new("node")
+        .arg("--version")
+        .output()
+        .unwrap_or_else(|_| {
+            panic!("Failed to execute 'node --version' command. Is Node installed?")
+        });
+}
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    check_requirements();
     dotenv().ok();
     env_logger::init();
 
@@ -184,14 +203,23 @@ async fn main() -> anyhow::Result<()> {
                             .await?;
 
                     let mut scenarios_run: Vec<String> = vec![];
-
-                    let dir_entries = fs::read_dir(scenarios_path)?;
-                    for dir_entry in dir_entries {
-                        let scenario_path = dir_entry?.path();
-                        match scenario_runner::run(&scenario_path, &cardamon_run_id).await {
+                    // Check for single file / directory input
+                    if scenarios_path.is_dir() {
+                        let dir_entries = fs::read_dir(scenarios_path)?;
+                        for dir_entry in dir_entries {
+                            let scenario_path = dir_entry?.path();
+                            match scenario_runner::run(&scenario_path, &cardamon_run_id).await {
+                                Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
+                                Err(_err) => {}
+                            }
+                        }
+                    } else if scenarios_path.is_file() {
+                        match scenario_runner::run(&scenarios_path, &cardamon_run_id).await {
                             Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
                             Err(_err) => {}
                         }
+                    } else {
+                        eprintln!("{:?}, is not a valid directory or file", scenarios_path);
                     }
 
                     let summary = generate_scenario_summary(scenarios_run)?;

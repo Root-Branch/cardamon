@@ -14,6 +14,7 @@ _Copyright © 2023 Oliver Winks_
 - [Scenario Runner](#scenario-runner)
   - [Specifying a scenario](#specifying-a-scenario)
   - [Running](#running)
+- [Requirements](#requirements)
 - [Live Dashboard](#live-dashboard)
   - [Deployment](#deployment)
 - [CLI Reference](#cli-reference)
@@ -33,6 +34,9 @@ Use this mode to compare your application with previous runs on a standard set o
 ### specifying a scenario
 
 ### running
+## Requirements
+Telegraf - https://www.influxdata.com/time-series-platform/telegraf/
+Node - https://nodejs.org/en
 
 ## Live Dashboard
 
