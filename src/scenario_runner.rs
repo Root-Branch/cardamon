@@ -6,56 +6,58 @@
 
 use crate::metrics_server::dto;
 use spinners::{Spinner, Spinners};
-use std::{ffi::OsStr, path::PathBuf};
 use tokio::process::Command;
 
-pub async fn run<'a>(scenario_path: &'a PathBuf, cardamon_run_id: &str) -> anyhow::Result<&'a str> {
-    let file_name = scenario_path.file_name().and_then(OsStr::to_str);
-    let ext = scenario_path.extension().and_then(OsStr::to_str);
+pub async fn run(scenario_command: &str, cardamon_run_id: &str) -> anyhow::Result<String> {
+    let scenario_name = scenario_command.to_string();
 
-    let is_file = scenario_path.is_file();
-    let has_valid_name = file_name.unwrap_or("") != "";
-    let has_js_ext = ext.unwrap_or("") == "js";
+    let mut spinner = Spinner::new(Spinners::Dots, format!("Running {}", scenario_name));
 
-    if is_file && has_valid_name && has_js_ext {
-        let scenario_name = file_name.unwrap();
+    // start measurement
+    let start_time = chrono::Utc::now().timestamp_millis();
 
-        let mut spinner = Spinner::new(Spinners::Dots, format!("Running {}", scenario_name));
+    // Split the scenario_command into a vector
+    let command_parts: Vec<&str> = scenario_command.split_whitespace().collect();
 
-        // start measurement
-        let start_time = chrono::Utc::now().timestamp_millis();
+    // Get the command and arguments
+    let command = command_parts
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Empty command"))?;
+    let args = &command_parts[1..];
 
-        // run scenario ...
-        Command::new("node")
-            .arg(scenario_path.clone())
-            .kill_on_drop(true)
-            .output()
-            .await?;
+    // run scenario ...
+    let output = Command::new(command)
+        .args(args)
+        .kill_on_drop(true)
+        .output()
+        .await?;
 
-        // stop measurement
-        let stop_time = chrono::Utc::now().timestamp_millis();
+    // stop measurement
+    let stop_time = chrono::Utc::now().timestamp_millis();
 
-        let scenario = dto::Scenario {
-            cardamon_run_type: String::from("SCENARIO"),
-            cardamon_run_id: String::from(cardamon_run_id),
-            scenario_name: String::from(scenario_name),
-            start_time,
-            stop_time,
-        };
+    let scenario = dto::Scenario {
+        cardamon_run_type: String::from("SCENARIO"),
+        cardamon_run_id: String::from(cardamon_run_id),
+        scenario_name: String::from(scenario_name.clone()),
+        start_time,
+        stop_time,
+    };
 
-        // send scenario run to db
-        ureq::post("http://localhost:2050/scenario")
-            .send_json(ureq::json!(scenario))
-            .map_err(anyhow::Error::msg)
-            .map(|_| ())?;
+    // send scenario run to db
+    ureq::post("http://localhost:2050/scenario")
+        .send_json(ureq::json!(scenario))
+        .map_err(anyhow::Error::msg)
+        .map(|_| ())?;
 
-        spinner.stop_with_symbol("✓");
+    spinner.stop_with_symbol("✓");
 
+    if output.status.success() {
         Ok(scenario_name)
     } else {
+        let error_message = String::from_utf8_lossy(&output.stderr).to_string();
         Err(anyhow::anyhow!(
-            "{:?} is not a valid javascript file",
-            scenario_path
+            "Scenario execution failed: {}",
+            error_message
         ))
     }
 }

@@ -1,0 +1,10 @@
+[config]
+mode = "dir" 
+directory = "scenarios"
+command = "node {file}"
+
+# mode = "default"
+#commands = ["node scenarios/index.js", "node scenarios/main.js"]
+# mode = "dir"
+# directory = "scenarios"
+# command = "node run {file}
