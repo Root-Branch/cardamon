@@ -102,7 +102,7 @@ async fn init_scenario_run(
         telegraf_conf_path,
         cardamon_run_type,
         cardamon_run_id.clone(),
-        String::from("http://localhost:2050"),
+        String::from("http://127.0.0.1:2050"),
     );
 
     // wait a second for telegraf to start

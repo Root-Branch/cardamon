@@ -66,7 +66,7 @@ async fn insert_metrics(
     extract::State(db): extract::State<Db>,
     extract::Json(body): extract::Json<dto::Batch>,
 ) {
-    info!("Metrics ep hit");
+    info!("Metrics insert ep hit");
     let mut db_conn = db.lock().unwrap();
 
     for m in body.metrics {
@@ -217,7 +217,7 @@ pub fn start(db: Db) -> JoinHandle<()> {
 
         // run our app with hyper, listening globally on port 2050
         info!("Starting server on localhost:2050");
-        let listener = tokio::net::TcpListener::bind("localhost:2050")
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:2050")
             .await
             .unwrap();
         axum::serve(listener, app).await.unwrap();

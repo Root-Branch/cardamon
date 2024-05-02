@@ -15,6 +15,10 @@ pub fn start(
     metric_server_url: String,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        info!(
+            "Starting child process with metric server url {}",
+            metric_server_url
+        );
         let mut child = Command::new("telegraf")
             .envs(vec![
                 ("CARDAMON_RUN_TYPE", cardamon_run_type),
