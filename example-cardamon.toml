@@ -1,8 +1,10 @@
+[global_settings]
+debug_level = "info"
 [config]
 mode = "dir" 
 directory = "scenarios"
 command = "node {file}"
-
+database_url = "db.sqlite3"
 # mode = "default"
 #commands = ["node scenarios/index.js", "node scenarios/main.js"]
 # mode = "dir"

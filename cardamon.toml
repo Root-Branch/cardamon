@@ -1,7 +1,10 @@
+[global_settings]
+debug_level = "info"
 [config]
 mode = "dir" 
 directory = "scenarios"
 command = "node {file}"
+database_url = "db.sqlite3"
 
 # mode = "default"
 #commands = ["node scenarios/index.js", "node scenarios/main.js"]
@@ -9,17 +12,4 @@ command = "node {file}"
 # directory = "scenarios"
 # command = "node run {file}
 
-
-## Below is non-functional pseudocode
-metric_server = "http://localhost:8000" # default
-scenarios_dir = "./scenarios"           # default
-telegraf_conf = "./telegraf.conf"       # default
-interval = "5s"                         # default
-
-[application]
-processes.docker = ["accuheat_client_db"]
-processes.metal = ["accuheat_client"]
-
-[scenario_runner]
-cpu_tdp = 23
 
