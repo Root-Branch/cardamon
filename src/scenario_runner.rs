@@ -4,58 +4,163 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use crate::metrics_server::dto;
+use crate::{
+    metrics_server::{self, dto},
+    settings::Settings,
+    telegraf,
+};
 use spinners::{Spinner, Spinners};
-use std::{ffi::OsStr, path::PathBuf};
 use tokio::process::Command;
+use tracing::{error, info};
 
-pub async fn run<'a>(scenario_path: &'a PathBuf, cardamon_run_id: &str) -> anyhow::Result<&'a str> {
-    let file_name = scenario_path.file_name().and_then(OsStr::to_str);
-    let ext = scenario_path.extension().and_then(OsStr::to_str);
+use diesel::SqliteConnection;
+use nanoid::nanoid;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tokio::time::sleep;
+pub async fn start_scenarios(
+    settings: &Settings,
+    db_conn: Arc<Mutex<SqliteConnection>>,
+) -> anyhow::Result<()> {
+    let telegraf_conf_path = "telegraf.conf".into();
+    let cardamon_run_id = init_scenario_run(db_conn.clone(), telegraf_conf_path).await?;
 
-    let is_file = scenario_path.is_file();
-    let has_valid_name = file_name.unwrap_or("") != "";
-    let has_js_ext = ext.unwrap_or("") == "js";
+    // For each command in config, run command
+    let mut scenarios_run: Vec<String> = vec![];
+    match settings.config.runs {
+        Some(ref runs) => {
+            for file_path in runs {
+                match run(file_path, &cardamon_run_id).await {
+                    Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
+                    Err(e) => error!("Error with scenario: {}", e),
+                }
+            }
+        }
+        None => {
+            panic!("No runs provided");
+        }
+    }
+    let summary = generate_scenario_summary(scenarios_run)?;
+    info!("{}", summary);
 
-    if is_file && has_valid_name && has_js_ext {
-        let scenario_name = file_name.unwrap();
+    Ok(())
+}
 
-        let mut spinner = Spinner::new(Spinners::Dots, format!("Running {}", scenario_name));
+fn generate_scenario_summary(scenarios: Vec<String>) -> anyhow::Result<String> {
+    // generate carbon summary
+    let summary_opts = dto::ScenarioSummaryOpts {
+        scenarios,
+        last_n: 3,
+        cpu_tdp: 23.0,
+    };
 
-        // start measurement
-        let start_time = chrono::Utc::now().timestamp_millis();
+    // request summary of scenario run compared to previous runs
+    let stats = ureq::get("http://localhost:2050/scenario_summary")
+        .send_json(ureq::json!(summary_opts))
+        .map(|res| res.into_json::<Vec<dto::ScenarioRunStats>>())?;
 
-        // run scenario ...
-        Command::new("node")
-            .arg(scenario_path.clone())
-            .kill_on_drop(true)
-            .output()
-            .await?;
+    stats
+        .map(|stats| {
+            let mut summary = String::new();
+            for stats in stats {
+                summary.push_str(&format!("\n{}", stats.scenario_name));
+                for stats in stats.run_stats {
+                    summary.push_str(&format!(
+                        "\n\t + [{}]",
+                        stats.start_time.format("%Y-%m-%d @ %H:%M")
+                    ));
+                    for stats in stats.process_stats {
+                        summary.push_str(&format!(
+                            "\n\t\t {:}: \t{:.2}",
+                            stats.process_name, stats.energy_consumption_w,
+                        ));
+                    }
+                }
+            }
 
-        // stop measurement
-        let stop_time = chrono::Utc::now().timestamp_millis();
+            summary
+        })
+        .map_err(|err| anyhow::anyhow!(format!("{}", err.to_string())))
+}
 
-        let scenario = dto::Scenario {
-            cardamon_run_type: String::from("SCENARIO"),
-            cardamon_run_id: String::from(cardamon_run_id),
-            scenario_name: String::from(scenario_name),
-            start_time,
-            stop_time,
-        };
+pub async fn init_scenario_run(
+    state: Arc<Mutex<SqliteConnection>>,
+    telegraf_conf_path: PathBuf,
+) -> anyhow::Result<String> {
+    // create a unique cardamon label for this scenario
+    let cardamon_run_id = nanoid!();
+    let cardamon_run_type = String::from("SCENARIO");
 
-        // send scenario run to db
-        ureq::post("http://localhost:2050/scenario")
-            .send_json(ureq::json!(scenario))
-            .map_err(anyhow::Error::msg)
-            .map(|_| ())?;
+    // start the metric server
+    metrics_server::start(state);
 
-        spinner.stop_with_symbol("✓");
+    // start telegraf
+    telegraf::start(
+        telegraf_conf_path,
+        cardamon_run_type,
+        cardamon_run_id.clone(),
+        String::from("http://127.0.0.1:2050"),
+    );
 
+    // wait a second for telegraf to start
+    sleep(Duration::from_millis(1000)).await;
+
+    Ok(cardamon_run_id)
+}
+
+pub async fn run(scenario_command: &str, cardamon_run_id: &str) -> anyhow::Result<String> {
+    let scenario_name = scenario_command.to_string();
+
+    let mut spinner = Spinner::new(Spinners::Dots, format!("Running {}", scenario_name));
+
+    // start measurement
+    let start_time = chrono::Utc::now().timestamp_millis();
+
+    // Split the scenario_command into a vector
+    let command_parts: Vec<&str> = scenario_command.split_whitespace().collect();
+
+    // Get the command and arguments
+    let command = command_parts
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Empty command"))?;
+    let args = &command_parts[1..];
+
+    // run scenario ...
+    let output = Command::new(command)
+        .args(args)
+        .kill_on_drop(true)
+        .output()
+        .await?;
+
+    // stop measurement
+    let stop_time = chrono::Utc::now().timestamp_millis();
+
+    let scenario = dto::Scenario {
+        cardamon_run_type: String::from("SCENARIO"),
+        cardamon_run_id: String::from(cardamon_run_id),
+        scenario_name: String::from(scenario_name.clone()),
+        start_time,
+        stop_time,
+    };
+
+    // send scenario run to db
+    ureq::post("http://localhost:2050/scenario")
+        .send_json(ureq::json!(scenario))
+        .map_err(anyhow::Error::msg)
+        .map(|_| ())?;
+
+    spinner.stop_with_symbol("✓");
+
+    if output.status.success() {
         Ok(scenario_name)
     } else {
+        let error_message = String::from_utf8_lossy(&output.stderr).to_string();
         Err(anyhow::anyhow!(
-            "{:?} is not a valid javascript file",
-            scenario_path
+            "Scenario execution failed: {}",
+            error_message
         ))
     }
 }

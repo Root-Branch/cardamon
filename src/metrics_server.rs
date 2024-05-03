@@ -18,9 +18,9 @@ use axum::{
 use chrono::DateTime;
 use diesel::{prelude::*, RunQueryDsl, SqliteConnection};
 use itertools::Itertools;
-use log::info;
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinHandle;
+use tracing::{error, info};
 
 type Db = Arc<Mutex<SqliteConnection>>;
 
@@ -29,7 +29,9 @@ async fn insert_scenario_run(
     extract::Json(body): extract::Json<dto::Scenario>,
 ) {
     let mut db_conn = db.lock().unwrap();
-
+    info!("Insert scenario run hit");
+    let run_id = body.cardamon_run_id.clone();
+    let scen_name = body.scenario_name.clone();
     let new_scenario = dao::NewScenario {
         scenario: dao::Scenario {
             cardamon_run_type: body.cardamon_run_type,
@@ -44,17 +46,27 @@ async fn insert_scenario_run(
         },
     };
 
-    diesel::insert_into(dao_schema::scenario::table)
+    let result = diesel::insert_into(dao_schema::scenario::table)
         .values(&new_scenario)
         .returning(dao::Scenario::as_returning())
-        .get_result(&mut *db_conn)
-        .expect("Error saving new scenario");
+        .get_result(&mut *db_conn);
+    match result {
+        Ok(_) => info!(
+            "Succesfully added scenario for run ID {} with name {}",
+            run_id, scen_name
+        ),
+        Err(e) => error!(
+            "Error inserting new scenario for run ID {} : {} ",
+            run_id, e
+        ),
+    }
 }
 
 async fn insert_metrics(
     extract::State(db): extract::State<Db>,
     extract::Json(body): extract::Json<dto::Batch>,
 ) {
+    info!("Metrics insert ep hit");
     let mut db_conn = db.lock().unwrap();
 
     for m in body.metrics {
@@ -67,6 +79,7 @@ async fn insert_metrics(
                 // TODO: This needs to be redone! Should we join all these futures together? What happens if one fails,
                 // does it cause all subsequent futures to fail? We basically want to log failure and carry on to the next
                 // future because it doesn't really matter if we lose the odd metric.
+                let run_id = tags.cardamon_run_id.clone();
                 let cpu_metrics = dao::NewCpuMetrics {
                     metrics: dao::CpuMetrics {
                         cardamon_run_type: tags.cardamon_run_type,
@@ -85,12 +98,17 @@ async fn insert_metrics(
                     },
                 };
 
-                diesel::insert_into(dao_schema::cpu_metrics::table)
+                let result = diesel::insert_into(dao_schema::cpu_metrics::table)
                     .values(&cpu_metrics)
-                    .execute(&mut *db_conn)
-                    .expect("Error saving cpu metrics");
+                    .execute(&mut *db_conn);
+                match result {
+                    Ok(_) => info!("Added metrics to database for run id {}", run_id),
+                    Err(e) => error!(
+                        "Failed to add metrics to database for run id {} | {e}",
+                        run_id
+                    ),
+                }
             }
-
             dto::Metrics::DockerContainerMem {
                 timestamp: _,
                 fields: _,
@@ -134,6 +152,7 @@ async fn create_summary(
     extract::State(db): extract::State<Db>,
     extract::Json(body): extract::Json<dto::ScenarioSummaryOpts>,
 ) -> Json<Vec<dto::ScenarioRunStats>> {
+    info!("Hit create summary endpoint");
     use crate::metrics_server::dao_schema::cpu_metrics::dsl as m_dsl;
     use crate::metrics_server::dao_schema::scenario::dsl as sc_dsl;
 
@@ -198,7 +217,7 @@ pub fn start(db: Db) -> JoinHandle<()> {
 
         // run our app with hyper, listening globally on port 2050
         info!("Starting server on localhost:2050");
-        let listener = tokio::net::TcpListener::bind("localhost:2050")
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:2050")
             .await
             .unwrap();
         axum::serve(listener, app).await.unwrap();
