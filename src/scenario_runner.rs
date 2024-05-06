@@ -6,7 +6,7 @@
 
 use crate::{
     metrics_server::{self, dto},
-    settings::Settings,
+    settings::{MainConfig, Scenario},
     telegraf,
 };
 use spinners::{Spinner, Spinners};
@@ -22,7 +22,7 @@ use std::{
 };
 use tokio::time::sleep;
 pub async fn start_scenarios(
-    settings: &Settings,
+    settings: &MainConfig,
     db_conn: Arc<Mutex<SqliteConnection>>,
 ) -> anyhow::Result<()> {
     let telegraf_conf_path = "telegraf.conf".into();
@@ -30,17 +30,11 @@ pub async fn start_scenarios(
 
     // For each command in config, run command
     let mut scenarios_run: Vec<String> = vec![];
-    match settings.config.runs {
-        Some(ref runs) => {
-            for file_path in runs {
-                match run(file_path, &cardamon_run_id).await {
-                    Ok(scenario_name) => scenarios_run.push(scenario_name.to_string()),
-                    Err(e) => error!("Error with scenario: {}", e),
-                }
-            }
-        }
-        None => {
-            panic!("No runs provided");
+    for scenario in &settings.scenarios {
+        // Pass in iteration number
+        match run(&scenario, &cardamon_run_id).await {
+            Ok(()) => scenarios_run.push(scenario.name.to_string()),
+            Err(e) => error!("Error with scenario: {}", e),
         }
     }
     let summary = generate_scenario_summary(scenarios_run)?;
@@ -111,8 +105,8 @@ pub async fn init_scenario_run(
     Ok(cardamon_run_id)
 }
 
-pub async fn run(scenario_command: &str, cardamon_run_id: &str) -> anyhow::Result<String> {
-    let scenario_name = scenario_command.to_string();
+pub async fn run(scenario: &Scenario, cardamon_run_id: &str) -> anyhow::Result<()> {
+    let scenario_name = &scenario.name;
 
     let mut spinner = Spinner::new(Spinners::Dots, format!("Running {}", scenario_name));
 
@@ -120,7 +114,7 @@ pub async fn run(scenario_command: &str, cardamon_run_id: &str) -> anyhow::Resul
     let start_time = chrono::Utc::now().timestamp_millis();
 
     // Split the scenario_command into a vector
-    let command_parts: Vec<&str> = scenario_command.split_whitespace().collect();
+    let command_parts: Vec<&str> = scenario.command.split_whitespace().collect();
 
     // Get the command and arguments
     let command = command_parts
@@ -142,6 +136,7 @@ pub async fn run(scenario_command: &str, cardamon_run_id: &str) -> anyhow::Resul
         cardamon_run_type: String::from("SCENARIO"),
         cardamon_run_id: String::from(cardamon_run_id),
         scenario_name: String::from(scenario_name.clone()),
+        iteration: scenario.iteration,
         start_time,
         stop_time,
     };
@@ -155,7 +150,7 @@ pub async fn run(scenario_command: &str, cardamon_run_id: &str) -> anyhow::Resul
     spinner.stop_with_symbol("✓");
 
     if output.status.success() {
-        Ok(scenario_name)
+        Ok(())
     } else {
         let error_message = String::from_utf8_lossy(&output.stderr).to_string();
         Err(anyhow::anyhow!(
