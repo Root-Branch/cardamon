@@ -16,6 +16,7 @@ use diesel::prelude::*;
 pub struct Scenario {
     pub cardamon_run_type: String,
     pub cardamon_run_id: String,
+    pub iteration: i32,
     pub scenario_name: String,
     pub start_time: NaiveDateTime,
     pub stop_time: NaiveDateTime,

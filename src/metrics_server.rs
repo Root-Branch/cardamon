@@ -32,11 +32,13 @@ async fn insert_scenario_run(
     info!("Insert scenario run hit");
     let run_id = body.cardamon_run_id.clone();
     let scen_name = body.scenario_name.clone();
+    let iteration = body.iteration.clone().try_into().unwrap_or(0);
     let new_scenario = dao::NewScenario {
         scenario: dao::Scenario {
             cardamon_run_type: body.cardamon_run_type,
             cardamon_run_id: body.cardamon_run_id,
             scenario_name: body.scenario_name,
+            iteration,
             start_time: DateTime::from_timestamp_millis(body.start_time)
                 .unwrap()
                 .naive_utc(),

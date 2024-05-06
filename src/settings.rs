@@ -204,15 +204,15 @@ impl Settings {
                     None => {
                         // Default mode
                         if let Some(ref scenario_commands) = config_scenario.commands {
-                            for (iteration, command) in scenario_commands.iter().enumerate() {
-                                // Get iterations, default to 1
-                                let num_iterations = config_scenario.iterations.unwrap_or(1);
-                                for _ in 1..=num_iterations {
+                            // Get iterations, default to 1
+                            let num_iterations = config_scenario.iterations.unwrap_or(1);
+                            for command in scenario_commands {
+                                for iteration in 1..=num_iterations {
                                     let name =
                                         config_scenario.name.clone().unwrap_or(command.clone());
                                     scenarios.push(Scenario {
                                         name,
-                                        iteration: (iteration + 1) as u32,
+                                        iteration,
                                         command: command.clone(),
                                     });
                                 }

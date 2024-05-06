@@ -1,12 +1,63 @@
-[global_settings]
+# Global settings
+[global]
 debug_level = "info"
-[config]
-mode = "dir" 
-directory = "scenarios"
-command = "node {file}"
-database_url = "db.sqlite3"
-# mode = "default"
-#commands = ["node scenarios/index.js", "node scenarios/main.js"]
-# mode = "dir"
-# directory = "scenarios"
-# command = "node run {file}
+
+# Define configs
+[[config]]
+name = "dev"
+# sqlite when just "path_name"
+# can use postgres via:
+# "postgres://user:password@localhost:5432/db2"
+database_url = "dev.db" 
+
+  [[config.scenario]]
+  name = "Run specific node command ( 2 iterations) "
+  iterations = 2
+  commands = [
+      "node scenarios/dev/1_sleep.js",
+      "node scenarios/dev/2_sleep.js"
+  ]
+
+  [[config.scenario]]
+  # Name is an optional field
+  # It will default to the command name (formatted)
+  # In this case: "node scenarios/dev/run_dir/1_dir_sleep.js"
+  # and  "node scenarios/dev/run_dir/2_dir_sleep.js"
+  #name = "Dev scenarios"
+# Iterations is also optional, will default to 1
+  # iterations = 1
+  directory = "scenarios/dev/run_dir"
+  command = "node {file}"
+
+[[config]]
+name = "cicd"
+database_url = "cicd.db" 
+
+  [[config.scenario]]
+  name = "Python tests - iterate once"
+  iterations = 1
+  commands = [
+      "python scenarios/cicd/1_script.py",
+      "python scenarios/cicd/2_script.py"
+  ]
+  
+  [[config.scenario]]
+  name = "Build project"
+  commands = ["(cd scenarios/cicd/go/ && go build -o card && ./card && rm card && cd -)"]
+  # Navigate to go directory in a subshell, build project, run, delete, navigate back"
+
+[[config]]
+name = "live"
+database_url = "live.db"
+
+  [[config.scenario]]
+  name = "node tests"
+  commands = [
+      "node test scenarios/live/test_one.js",
+      "node test scenarios/live/test_two.js"
+  ]
+
+  [[config.scenario]]
+  name = "go tests"
+  directory = "scenarios/live/go-tests/"
+  command = "go test {file}"

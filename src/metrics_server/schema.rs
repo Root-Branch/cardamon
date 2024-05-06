@@ -25,10 +25,13 @@ diesel::table! {
         cardamon_run_type -> Text,
         cardamon_run_id -> Text,
         scenario_name -> Text,
-        iteration -> Integer,
         start_time -> Timestamp,
         stop_time -> Timestamp,
+        iteration -> Integer,
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(cpu_metrics, scenario,);
+diesel::allow_tables_to_appear_in_same_query!(
+    cpu_metrics,
+    scenario,
+);

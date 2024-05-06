@@ -135,7 +135,7 @@ pub async fn run(scenario: &Scenario, cardamon_run_id: &str) -> anyhow::Result<(
     let scenario = dto::Scenario {
         cardamon_run_type: String::from("SCENARIO"),
         cardamon_run_id: String::from(cardamon_run_id),
-        scenario_name: String::from(scenario_name.clone()),
+        scenario_name: scenario_name.clone(),
         iteration: scenario.iteration,
         start_time,
         stop_time,
