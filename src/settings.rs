@@ -79,43 +79,6 @@ pub struct Settings {
     #[serde(rename = "config")] // Rename for ease of config use
     configs: Vec<Config>, // Called config in cardamon.toml,
 }
-
-#[derive(Debug, Deserialize)]
-struct GlobalSettings {
-    debug_level: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Config {
-    name: String,
-    database_url: String,
-    #[serde(rename = "scenario")]
-    scenarios: Vec<ConfigScenario>, // Called scenario in cardamon.toml
-}
-
-// This is the scenario for cardamon.toml
-#[derive(Debug, Deserialize)]
-struct ConfigScenario {
-    name: Option<String>,
-    iterations: Option<u32>,
-    commands: Option<Vec<String>>,
-    directory: Option<String>,
-    command: Option<String>,
-}
-// to prevent issues with iterations, incorrect config "names" being passed and more
-// Passing only the neccesary fields to the main.rs will be neccesary
-// Here we pass database_url and "commands" which should be all that's neccesary
-pub struct MainConfig {
-    pub database_url: String,
-    pub scenarios: Vec<Scenario>,
-}
-pub struct Scenario {
-    pub name: String,
-    pub iteration: u32, // A scenario with two iterations will have two structs pushed
-    // One with iteration = 1, and one with iteration = 2
-    // No need for main.rs / scenario_runner.rs to loop over
-    pub command: String,
-}
 impl Settings {
     //pub fn parse(config_name: String, verbose: bool) -> Result<MainConfig, String> {
     pub fn parse(config_name: String, verbose: bool) -> Result<MainConfig, ParseError> {
@@ -230,4 +193,41 @@ impl Settings {
             Err(ParseError::ConfigNotFound(config_name))
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalSettings {
+    debug_level: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Config {
+    name: String,
+    database_url: String,
+    #[serde(rename = "scenario")]
+    scenarios: Vec<ConfigScenario>, // Called scenario in cardamon.toml
+}
+
+// This is the scenario for cardamon.toml
+#[derive(Debug, Deserialize)]
+struct ConfigScenario {
+    name: Option<String>,
+    iterations: Option<u32>,
+    commands: Option<Vec<String>>,
+    directory: Option<String>,
+    command: Option<String>,
+}
+// to prevent issues with iterations, incorrect config "names" being passed and more
+// Passing only the neccesary fields to the main.rs will be neccesary
+// Here we pass database_url and "commands" which should be all that's neccesary
+pub struct MainConfig {
+    pub database_url: String,
+    pub scenarios: Vec<Scenario>,
+}
+pub struct Scenario {
+    pub name: String,
+    pub iteration: u32, // A scenario with two iterations will have two structs pushed
+    // One with iteration = 1, and one with iteration = 2
+    // No need for main.rs / scenario_runner.rs to loop over
+    pub command: String,
 }

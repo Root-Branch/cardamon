@@ -1,6 +1,6 @@
 use cardamon::{clap_args, scenario_runner, settings};
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use diesel::{prelude::*, SqliteConnection};
 use std::sync::{Arc, Mutex};
 use tracing::{error, info};
@@ -13,7 +13,7 @@ type DB = diesel::sqlite::Sqlite;
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     // dotenv
     dotenv().ok();
     // DB_URL will be over-ridden in config parse if set
@@ -37,18 +37,20 @@ async fn main() -> Result<()> {
                 settings::parse(name, args.verbose).context("Failed to parse settings:")?;
 
             // DB_URL is safe here, validated in settings
-            let database_url = settings.database_url.clone();
-            if !Path::new(&database_url).exists() {
-                fs::File::create(&database_url)
-                    .with_context(|| format!("failed to create database file {} ", database_url))?;
+            //let database_url = settings.database_url.clone();
+            if !Path::new(&settings.database_url).exists() {
+                fs::File::create(&settings.database_url).with_context(|| {
+                    format!("failed to create database file {} ", settings.database_url)
+                })?;
             }
             // start sqlite connection and migrate the db
-            let mut db_conn = SqliteConnection::establish(&database_url).with_context(|| {
-                format!(
-                    "Failed to establish sqlite connection to : {}",
-                    database_url
-                )
-            })?;
+            let mut db_conn =
+                SqliteConnection::establish(&settings.database_url).with_context(|| {
+                    format!(
+                        "Failed to establish sqlite connection to : {}",
+                        settings.database_url
+                    )
+                })?;
             run_migrations(&mut db_conn);
 
             let shared_db_conn = Arc::new(Mutex::new(db_conn));
