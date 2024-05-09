@@ -9,10 +9,9 @@ _Copyright © 2023 Oliver Winks_
 # Usage
 
 - [Installation](#installation)
-- [Configurartion](#configuration)
+- [Configuration](#configuration)
 - [Telegraf](#telegraf)
 - [Scenario Runner](#scenario-runner)
-  - [Specifying a scenario](#specifying-a-scenario)
   - [Running](#running)
 - [Requirements](#requirements)
 - [Live Dashboard](#live-dashboard)
@@ -23,26 +22,32 @@ _Copyright © 2023 Oliver Winks_
 
 ## Configuration
 
-## Telegraf
+Cardamon is configured using a `cardamon.toml` file in your project directory. 
+
+View an example configuration in example-cardamon.toml
 
 ## Scenario Runner
 
-In this mode, Cardamon monitors your application whilst running "scenarios" written in Playwright (other frameworks coming soon).
+In this mode, Cardamon monitors your application while running "scenarios" written by you ( think tests, stress-tests, etc ) 
 
 Use this mode to compare your application with previous runs on a standard set of use cases. This is useful to monitor the carbon emissions of your application as it develops.
 
-### specifying a scenario
+### Running
 
-### running
+To run Cardamon with a specific configuration, use the following command:
+
+```
+cardamon run --name="dev" 
+```
+
 ## Requirements
-Telegraf - https://www.influxdata.com/time-series-platform/telegraf/
-Node - https://nodejs.org/en
+- Telegraf - https://www.influxdata.com/time-series-platform/telegraf/
 
 ## Live Dashboard
 
 Coming Soon!
 
-### deployment
+### Deployment
 
 ## CLI Reference
 
@@ -50,6 +55,6 @@ Coming Soon!
 
 # License
 
-cardamon is distributed under the terms of the Mozilla Public License(Version 2.0).
+Cardamon is distributed under the terms of the Mozilla Public License (Version 2.0).
 
 See [LICENSE-MPL](https://www.mozilla.org/en-US/MPL/2.0) for details.

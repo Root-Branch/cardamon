@@ -61,3 +61,15 @@ database_url = "live.db"
   name = "go tests"
   directory = "scenarios/live/go-tests/"
   command = "go test {file}"
+
+[[config]]
+name = "test"
+database_url = "test.db"
+    [[config.scenario]]
+    name = "Run py stress test"
+    iterations = 2
+    commands = [
+        "python examples/docker-python/stress_client.py"
+    ]
+
+
