@@ -15,6 +15,7 @@ pub struct Scenario {
     pub cardamon_run_type: String,
     pub cardamon_run_id: String,
     pub scenario_name: String,
+    pub iteration: u32,
     pub start_time: i64,
     pub stop_time: i64,
 }

@@ -11,7 +11,7 @@ name = "dev"
 database_url = "dev.db" 
 
   [[config.scenario]]
-  #name = "Run specific node command ( 2 iterations) "
+  name = "Run specific node command ( 2 iterations) "
   iterations = 2
   commands = [
       "node scenarios/dev/1_sleep.js",
@@ -24,7 +24,7 @@ database_url = "dev.db"
   # In this case: "node scenarios/dev/run_dir/1_dir_sleep.js"
   # and  "node scenarios/dev/run_dir/2_dir_sleep.js"
   #name = "Dev scenarios"
-  # Iterations is also optional, will default to 1
+# Iterations is also optional, will default to 1
   # iterations = 1
   directory = "scenarios/dev/run_dir"
   command = "node {file}"
@@ -61,15 +61,3 @@ database_url = "live.db"
   name = "go tests"
   directory = "scenarios/live/go-tests/"
   command = "go test {file}"
-
-[[config]]
-name = "test"
-database_url = "test.db"
-    [[config.scenario]]
-    name = "Run py stress test"
-    iterations = 2
-    commands = [
-        "python examples/docker-python/stress_client.py"
-    ]
-
-

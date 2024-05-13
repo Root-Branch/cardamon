@@ -25,6 +25,7 @@ diesel::table! {
         cardamon_run_type -> Text,
         cardamon_run_id -> Text,
         scenario_name -> Text,
+        iteration -> Integer,
         start_time -> Timestamp,
         stop_time -> Timestamp,
     }
