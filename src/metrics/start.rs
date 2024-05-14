@@ -14,7 +14,7 @@ pub async fn get_metrics(t: CPUType) -> anyhow::Result<CPUStatus, CPUError> {
             unimplemented!("Getting Kubernetes stats is not implemented yet")
         }
     };
-    println!("CPU status: {:?}", result);
+    // println!("CPU status: {:?}", result);
     result
 }
 
@@ -43,6 +43,48 @@ mod tests {
             .is_ok());
     }
     #[tokio::test]
+    async fn test_valid_port() {
+        let docker = Docker::connect_with_defaults().unwrap();
+        let container_name = format!("cardamon-test-valid-port-{}", Uuid::new_v4().to_string());
+        let image_name = "python:3-alpine";
+        let mut port = 8000;
+
+        // Iterate over ports until a free one is found
+        while is_port_in_use(port).await {
+            port += 1;
+        }
+
+        let _container_id = create_container(&docker, image_name, &container_name, Some(port))
+            .await
+            .unwrap();
+        //Could be a one-liner, but easier to debug if we can print
+        let result = get_metrics(DockerStats(DockerType::Port(port))).await;
+        //println!("{:?}", result);
+        assert!(result.is_ok());
+
+        // Cleanup
+        cleanup_cardamon_containers("/cardamon-test-valid-port-").await;
+    }
+
+    async fn is_port_in_use(port: u16) -> bool {
+        use tokio::net::TcpListener;
+
+        match TcpListener::bind(("0.0.0.0", port)).await {
+            Ok(_) => false,
+            Err(_) => true,
+        }
+    }
+    #[tokio::test]
+    async fn test_invalid_port() {
+        let invalid_port = 9999;
+
+        // Get metrics using invalid port
+        assert!(get_metrics(DockerStats(DockerType::Port(invalid_port)))
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
     async fn docker_invalid_container_name() {
         let docker = Docker::connect_with_defaults().unwrap();
         // Need to check it's an invalid container name
@@ -69,16 +111,63 @@ mod tests {
         .await;
 
         assert!(result.is_err());
-        cleanup_cardamon_containers().await;
     }
+
     #[tokio::test]
     async fn docker_valid_container_name() {
-        //Create tiny-image ( Just a http server, could be any program that stays up
         let docker = Docker::connect_with_defaults().unwrap();
-        let container_name = format!("cardamon-test-container-{}", Uuid::new_v4().to_string());
+        let container_name = format!(
+            "cardamon-test-valid-container-name-{}",
+            Uuid::new_v4().to_string()
+        );
         let image_name = "python:3-alpine";
 
-        // Creation is a stream of messages from docker
+        // Create and start the container
+        let _container_id = create_container(&docker, image_name, &container_name, None)
+            .await
+            .unwrap();
+
+        // Get metrics
+        let result = get_metrics(DockerStats(DockerType::ContainerName(
+            container_name.to_string(),
+        )))
+        .await;
+        assert!(result.is_ok(), "get_metrics failed: {:?}", result.err());
+        // Cleanup
+        cleanup_cardamon_containers("/cardamon-test-valid-container-name-").await;
+    }
+
+    #[tokio::test]
+    async fn test_invalid_container_name() {
+        let invalid_container_name = "".to_string();
+
+        // Get metrics using invalid container name
+        assert!(get_metrics(DockerStats(DockerType::ContainerName(
+            invalid_container_name
+        )))
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn test_invalid_container_id() {
+        let invalid_container_id = "".to_string();
+
+        // Get metrics using invalid container ID
+        assert!(
+            get_metrics(DockerStats(DockerType::ContainerID(invalid_container_id)))
+                .await
+                .is_err()
+        );
+    }
+
+    async fn create_container(
+        docker: &Docker,
+        image_name: &str,
+        container_name: &str,
+        port: Option<u16>,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        // Create tiny-image (Just an HTTP server, could be any program that stays up)
         let mut image_stream = docker.create_image(
             Some(bollard::image::CreateImageOptions {
                 from_image: image_name,
@@ -88,16 +177,14 @@ mod tests {
             None,
         );
         while let Some(info) = image_stream.next().await {
-            match info {
-                Ok(..) => (),
-                Err(err) => {
-                    eprintln!("Error creating image: {}", err);
-                    break;
-                }
+            if let Err(err) = info {
+                eprintln!("Error creating image: {}", err);
+                break;
             }
         }
-        // Run the http-server ( image is created )
-        let container_config = Config {
+
+        // Run the HTTP server (image is created)
+        let mut container_config = Config {
             image: Some(image_name.to_string()),
             cmd: Some(vec![
                 "/bin/sh".to_string(),
@@ -106,37 +193,51 @@ mod tests {
             ]),
             host_config: Some(HostConfig {
                 auto_remove: Some(true),
-
                 ..Default::default()
             }),
             ..Default::default()
         };
+
+        if let Some(port) = port {
+            container_config.cmd = Some(vec![
+                "/bin/sh".to_string(),
+                "-c".to_string(),
+                format!("python -m http.server {}", port),
+            ]);
+            container_config.exposed_ports = Some(std::collections::HashMap::from([(
+                format!("{}/tcp", port),
+                std::collections::HashMap::new(),
+            )]));
+            container_config.host_config = Some(HostConfig {
+                auto_remove: Some(true),
+                port_bindings: Some(std::collections::HashMap::from([(
+                    format!("{}/tcp", port),
+                    Some(vec![bollard::models::PortBinding {
+                        host_ip: Some("0.0.0.0".to_string()),
+                        host_port: Some(port.to_string()),
+                    }]),
+                )])),
+                ..Default::default()
+            });
+        }
+
         let create_options = CreateContainerOptions {
-            name: container_name.clone(),
+            name: container_name.to_string(),
             ..Default::default()
         };
-        // Create a container with our name
+
+        // Create a container with the specified name
         let container = docker
             .create_container(Some(create_options), container_config)
-            .await
-            .unwrap();
+            .await?;
 
-        // Start it
+        // Start the container
         docker
             .start_container(&container.id, None::<StartContainerOptions<String>>)
-            .await
-            .unwrap();
-        // Get metrics
-        assert!(get_metrics(DockerStats(DockerType::ContainerName(
-            container_name.to_string()
-        )))
-        .await
-        .is_ok());
-
-        // Cleanup
-        cleanup_cardamon_containers().await;
+            .await?;
+        Ok(container.id)
     }
-    async fn cleanup_cardamon_containers() {
+    async fn cleanup_cardamon_containers(container_name: &str) {
         let docker = Docker::connect_with_defaults().unwrap();
         let container_list = docker
             .list_containers(None::<ListContainersOptions<String>>)
@@ -146,10 +247,11 @@ mod tests {
         for container in container_list {
             if let Some(names) = container.names {
                 for name in names {
-                    if name.starts_with("/cardamon-test-container-") {
+                    if name.starts_with(container_name) {
+                        let container_id = container.id.clone().unwrap();
                         docker
                             .remove_container(
-                                &container.id.clone().unwrap(),
+                                &container_id,
                                 Some(bollard::container::RemoveContainerOptions {
                                     force: true,
                                     ..Default::default()
@@ -157,6 +259,15 @@ mod tests {
                             )
                             .await
                             .unwrap();
+
+                        // Wait for the container to be removed
+                        docker
+                            .wait_container(
+                                &container_id,
+                                None::<bollard::container::WaitContainerOptions<String>>,
+                            )
+                            .collect::<Vec<_>>()
+                            .await;
                     }
                 }
             }

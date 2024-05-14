@@ -9,7 +9,7 @@ pub enum CPUType {
 pub enum DockerType {
     ContainerName(String),
     ContainerID(String),
-    ImageName(String),
+    Port(u16),
 }
 
 pub enum BareInput {
@@ -38,8 +38,8 @@ pub enum CPUError {
     ProcessNotFound(String),
     DockerBollardError(bollard::errors::Error),
     ContainerNameNotFound(String),
-    ImageNameNotFound(String),
     ContainerIDNotFound(String),
+    PortNotFound(String),
 }
 impl fmt::Display for CPUError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -49,8 +49,8 @@ impl fmt::Display for CPUError {
             CPUError::ContainerNameNotFound(name) => {
                 write!(f, "Container name not found: {}", name)
             }
-            CPUError::ImageNameNotFound(name) => write!(f, "Image name not found: {}", name),
             CPUError::ContainerIDNotFound(id) => write!(f, "Container id not found: {}", id),
+            CPUError::PortNotFound(port) => write!(f, "Port not found: {}", port),
         }
     }
 }
