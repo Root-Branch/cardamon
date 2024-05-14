@@ -15,11 +15,6 @@
 ### dotenv ###
 .env
 
-### nix files ### 
-flake.nix
-.envrc
-.direnv/
-flake.lock
 
 ### Intellij+all ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider

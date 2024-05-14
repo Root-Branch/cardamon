@@ -37,12 +37,20 @@ pub struct Stat {
 pub enum CPUError {
     ProcessNotFound(String),
     DockerBollardError(bollard::errors::Error),
+    ContainerNameNotFound(String),
+    ImageNameNotFound(String),
+    ContainerIDNotFound(String),
 }
 impl fmt::Display for CPUError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             CPUError::ProcessNotFound(pid) => write!(f, "Process not found: {}", pid),
             CPUError::DockerBollardError(e) => write!(f, "Docker error: {}", e),
+            CPUError::ContainerNameNotFound(name) => {
+                write!(f, "Container name not found: {}", name)
+            }
+            CPUError::ImageNameNotFound(name) => write!(f, "Image name not found: {}", name),
+            CPUError::ContainerIDNotFound(id) => write!(f, "Container id not found: {}", id),
         }
     }
 }
