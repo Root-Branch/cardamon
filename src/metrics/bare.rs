@@ -58,3 +58,23 @@ pub async fn get_stats_name(name: String) -> anyhow::Result<CPUStatus, CPUError>
         Err(CPUError::ProcessNotFound(format!("name ->  {name}")))
     }
 }
+#[cfg(test)]
+mod tests {
+    use std::process;
+
+    use crate::metrics::start::get_metrics;
+    use crate::metrics::types::BareInput::*;
+    use crate::metrics::types::CPUType::*;
+    #[tokio::test]
+    async fn bare_metal_valid_pid() {
+        assert!(get_metrics(BareStats(ProcessID(process::id())))
+            .await
+            .is_ok())
+    }
+    #[tokio::test]
+    async fn bare_metal_invalid_pid() {
+        assert!(!get_metrics(BareStats(ProcessID(std::u32::MAX)))
+            .await
+            .is_ok());
+    }
+}
