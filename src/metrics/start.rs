@@ -18,4 +18,20 @@ pub async fn get_metrics(t: CPUType) -> anyhow::Result<CPUStatus, CPUError> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    #[derive(Debug, serde::Deserialize)]
+    struct MyObj {
+        prop_a: String,
+    }
+
+    #[test]
+    fn serde_test() -> anyhow::Result<()> {
+        let json_str = r#"{ "prop_a": "hello", "prop_b": 42 }"#;
+        let obj: MyObj = serde_json::from_str(json_str).unwrap();
+        println!("{obj:?}");
+
+        assert!(true);
+
+        Ok(())
+    }
+}
