@@ -37,12 +37,12 @@ pub async fn log_bare_metal(
             match proc {
                 BareMetalProcess::ProcId(pid) => {
                     if let Ok(_stats) = bare::get_stats_pid(*pid).await {
-                        buffer.push(1337);
+                        buffer.push(1337); // TODO:: replace with actual data
                     }
                 }
                 BareMetalProcess::ProcName(name) => {
                     if let Ok(_stats) = bare::get_stats_name(name).await {
-                        buffer.push(2337);
+                        buffer.push(2337); // TODO: replace with actual data
                     }
                 }
             }
@@ -65,6 +65,7 @@ pub async fn log_bare_metal(
     }
 }
 
+// TODO: Needs to call metrics::docker::get_docker_stats
 pub async fn log_docker(
     _processes: Vec<DockerProcess>,
     metrics_log: Arc<Mutex<Vec<i32>>>,
@@ -73,6 +74,7 @@ pub async fn log_docker(
     let mut i = 0;
     loop {
         // generate random number (this will be replaced by call to sysinfo)
+        // TODO: replace 1338 with actual data
         buffer.push(1338);
 
         // if buffer is full then write to shared metrics log
@@ -92,6 +94,7 @@ pub async fn log_docker(
     }
 }
 
+// TODO: add scenario and persistence service to function signature
 pub async fn log_scenario(processes: Vec<Process>) -> anyhow::Result<()> {
     let metrics_log = vec![];
     let shared_metrics_log = Arc::new(Mutex::new(metrics_log));
@@ -132,8 +135,10 @@ pub async fn log_scenario(processes: Vec<Process>) -> anyhow::Result<()> {
     }
 
     // simulate running the scenarios
+    // TODO: make this sleep duration configurable?
     tokio::time::sleep(Duration::from_secs(30)).await;
 
+    // TODO: useful during development, remember to remove it!
     println!("{:?}", shared_metrics_log.lock().expect(""));
 
     // cancel loggers
@@ -148,8 +153,10 @@ pub async fn log_scenario(processes: Vec<Process>) -> anyhow::Result<()> {
     Ok(())
 }
 
+// TODO: This should do exactly what log_scenario does but it should save the shared_metrics_log
+// at regular fixed intervals (either space or time)
 pub async fn log_live(_processes: Vec<Process>) -> anyhow::Result<()> {
-    todo!()
+    todo!("implement this!")
 }
 
 #[cfg(test)]
