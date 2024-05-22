@@ -6,7 +6,7 @@ pub async fn get_metrics(t: CPUType) -> anyhow::Result<CPUStatus, CPUError> {
     let result = match t {
         BareStats(s) => match s {
             ProcessID(id) => get_stats_pid(id).await,
-            ProcessName(name) => get_stats_name(name).await,
+            ProcessName(name) => get_stats_name(&name).await,
         },
         DockerStats(s) => get_docker_stats(s).await,
         KuberetesStats(_s) => {

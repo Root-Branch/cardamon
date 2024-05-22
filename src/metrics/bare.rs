@@ -26,7 +26,7 @@ pub async fn get_stats_pid(pid: u32) -> anyhow::Result<CPUStatus, CPUError> {
     }
 }
 
-pub async fn get_stats_name(name: String) -> anyhow::Result<CPUStatus, CPUError> {
+pub async fn get_stats_name(name: &str) -> anyhow::Result<CPUStatus, CPUError> {
     let mut system = System::new_all();
     std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
 
@@ -58,6 +58,7 @@ pub async fn get_stats_name(name: String) -> anyhow::Result<CPUStatus, CPUError>
         Err(CPUError::ProcessNotFound(format!("name ->  {name}")))
     }
 }
+
 #[cfg(test)]
 mod tests {
     use std::process;

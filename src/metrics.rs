@@ -1,5 +1,6 @@
 use itertools::Itertools;
-use std::future::Future;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -24,28 +25,76 @@ pub enum Process {
     Docker(DockerProcess),
 }
 
-pub async fn log_bare_metal(processes: Vec<BareMetalProcess>, metrics_log: Mutex<Vec<Metrics>>) -> anyhow::Result<()> {
-    tokio::time::sleep(std::time::Duration::from_secs(20));
-
-    let mut vec = vec![];
-
+pub async fn log_bare_metal(
+    processes: Vec<BareMetalProcess>,
+    metrics_log: Arc<Mutex<Vec<i32>>>,
+) -> anyhow::Result<()> {
+    let mut buffer: Vec<i32> = vec![];
+    let mut i = 0;
     loop {
-        // call sysinfo
-        // batch metrics
-        metrics_log.lock().push(.....)
-        todo!("save metrics to db");
+        // generate random number (this will be replaced by call to sysinfo)
+        for proc in processes.iter() {
+            match proc {
+                BareMetalProcess::ProcId(pid) => {
+                    if let Ok(_stats) = bare::get_stats_pid(*pid).await {
+                        buffer.push(1337);
+                    }
+                }
+                BareMetalProcess::ProcName(name) => {
+                    if let Ok(_stats) = bare::get_stats_name(name).await {
+                        buffer.push(2337);
+                    }
+                }
+            }
+        }
+
+        // if buffer is full then write to shared metrics log
+        if i == 9 {
+            let mut metrics_log = metrics_log.lock().expect("");
+            metrics_log.append(&mut buffer);
+            println!("hello from bare");
+
+            i = 0;
+            buffer.clear();
+        } else {
+            i += 1;
+        }
+
+        // simulate waiting for more metrics
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
-
-    todo!()
 }
 
-pub async fn log_docker(processes: Vec<DockerProcess>, metrics_log: Mutex<Vec<Metrics>>) -> anyhow::Result<Vec<i32>> {
-    todo!()
+pub async fn log_docker(
+    _processes: Vec<DockerProcess>,
+    metrics_log: Arc<Mutex<Vec<i32>>>,
+) -> anyhow::Result<()> {
+    let mut buffer: Vec<i32> = vec![];
+    let mut i = 0;
+    loop {
+        // generate random number (this will be replaced by call to sysinfo)
+        buffer.push(1338);
+
+        // if buffer is full then write to shared metrics log
+        if i == 9 {
+            let mut metrics_log = metrics_log.lock().expect("");
+            metrics_log.append(&mut buffer);
+            println!("hello from docker");
+
+            i = 0;
+            buffer.clear();
+        } else {
+            i += 1;
+        }
+
+        // simulate waiting for more metrics
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 }
 
-pub async fn log_scenario(processes: Vec<Process>, scenario: Scenario, persistence_service: ) -> anyhow::Result<()> {
+pub async fn log_scenario(processes: Vec<Process>) -> anyhow::Result<()> {
     let metrics_log = vec![];
-    let shared_metrics_log = Mutex::new(metrics_log);
+    let shared_metrics_log = Arc::new(Mutex::new(metrics_log));
 
     // split processes into bare metal & docker processes
     let (bare_metal_procs, docker_procs): (Vec<_>, Vec<_>) =
@@ -62,6 +111,7 @@ pub async fn log_scenario(processes: Vec<Process>, scenario: Scenario, persisten
 
     if !bare_metal_procs.is_empty() {
         let token = token.clone();
+        let shared_metrics_log = shared_metrics_log.clone();
         join_set.spawn(async move {
             tokio::select! {
                 _ = token.cancelled() => {}
@@ -72,82 +122,48 @@ pub async fn log_scenario(processes: Vec<Process>, scenario: Scenario, persisten
 
     if !docker_procs.is_empty() {
         let token = token.clone();
+        let shared_metrics_log = shared_metrics_log.clone();
         join_set.spawn(async move {
             tokio::select! {
                 _ = token.cancelled() => {}
-                _ = log_docker(docker_procs, shared_metric_log) => {}
+                _ = log_docker(docker_procs, shared_metrics_log) => {}
             }
         });
     }
 
-    let res = scenario.run().await;
+    // simulate running the scenarios
+    tokio::time::sleep(Duration::from_secs(30)).await;
 
-    // persist metrics_log
+    println!("{:?}", shared_metrics_log.lock().expect(""));
 
-    // run the command to start the application
-    match res {
-        Ok(scenario) => {
-            // do nothing or add scenario to database
-            token.cancel();
-            scenario.save();
-        }
-        Err(error) => {
-            // handle error and/or DO NOT add scenario to database
-            token.cancel();
-        }
-    };
+    // cancel loggers
+    token.cancel();
 
     loop {
-        join_set.join_next().await;
+        if join_set.join_next().await.is_none() {
+            break;
+        }
     }
+
+    Ok(())
 }
 
-pub async fn log_live(processes: Vec<Process>, persistence_service: ) -> anyhow::Result<()> {
-
+pub async fn log_live(_processes: Vec<Process>) -> anyhow::Result<()> {
+    todo!()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test() {
-        let cardamon_run_id = "ughry75hdkf0l";
+    #[tokio::test]
+    async fn metrics_test() -> anyhow::Result<()> {
+        log_scenario(vec![
+            Process::BareMetal(BareMetalProcess::ProcId(42)),
+            Process::Docker(DockerProcess::ContainerId(String::from("my_container"))),
+        ])
+        .await?;
 
-        let processes = vec![Process::BareMetal(BareMetalProcess::ProcId(42))];
-        log(processes, asnyc |tx| {
-            let start_time = now();
-            let mut i = 0;
-
-            // run the scenario
-            
-            i += 1;
-            let stop_time = now();
-
-            // create scenario
-            // save scenario (using start and stop time)
-        });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        Ok(())
     }
 }
