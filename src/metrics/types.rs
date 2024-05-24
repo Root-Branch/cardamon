@@ -18,12 +18,12 @@ pub enum BareInput {
 }
 pub struct KubernetesInput {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CPUStatus {
     pub stats: Vec<Stat>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stat {
     pub id: String,
     pub name: String,
