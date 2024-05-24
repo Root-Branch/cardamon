@@ -1,4 +1,4 @@
-use super::PersistenceService;
+use super::DataAccess;
 use anyhow::Context;
 use nanoid::nanoid;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,15 +41,18 @@ impl CpuMetrics {
     }
 }
 
-pub struct LocalPersistenceService<'a> {
+////////////////////////////////////////
+// LocalDao
+
+pub struct LocalDao<'a> {
     pub pool: &'a sqlx::SqlitePool,
 }
-impl<'a> LocalPersistenceService<'a> {
+impl<'a> LocalDao<'a> {
     pub fn new(pool: &'a sqlx::SqlitePool) -> Self {
         Self { pool }
     }
 }
-impl<'a> PersistenceService<CpuMetrics> for LocalPersistenceService<'a> {
+impl<'a> DataAccess<CpuMetrics> for LocalDao<'a> {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<CpuMetrics>> {
         sqlx::query_as!(CpuMetrics, "SELECT * FROM cpu_metrics WHERE id = ?1", id)
             .fetch_optional(self.pool)
@@ -84,11 +87,14 @@ impl<'a> PersistenceService<CpuMetrics> for LocalPersistenceService<'a> {
     }
 }
 
-pub struct RemotePersistenceService {
+////////////////////////////////////////
+// RemoteDao
+
+pub struct RemoteDao {
     base_url: String,
     client: reqwest::Client,
 }
-impl RemotePersistenceService {
+impl RemoteDao {
     pub fn new(base_url: &str) -> Self {
         let base_url = base_url.strip_suffix('/').unwrap_or(base_url);
         Self {
@@ -97,7 +103,7 @@ impl RemotePersistenceService {
         }
     }
 }
-impl PersistenceService<CpuMetrics> for RemotePersistenceService {
+impl DataAccess<CpuMetrics> for RemoteDao {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<CpuMetrics>> {
         self.client
             .get(format!("{}/cpu_metrics/{id}", self.base_url))
@@ -136,7 +142,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_local_cpu_metrics_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
-        let metrics_service = LocalPersistenceService::new(&pool);
+        let metrics_service = LocalDao::new(&pool);
 
         let metrics = CpuMetrics::new("1", "1", "test_process", 200_f64, 100_f64, 4);
         metrics_service.persist(&metrics).await?;

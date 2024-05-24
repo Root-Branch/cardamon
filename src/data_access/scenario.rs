@@ -1,4 +1,4 @@
-use super::PersistenceService;
+use super::DataAccess;
 use anyhow::Context;
 use nanoid::nanoid;
 
@@ -28,16 +28,17 @@ impl Scenario {
 }
 
 ////////////////////////////////////////
-/// LocalPersistenceService
-pub struct LocalPersistenceService<'a> {
+// LocalDao
+
+pub struct LocalDao<'a> {
     pub pool: &'a sqlx::SqlitePool,
 }
-impl<'a> LocalPersistenceService<'a> {
+impl<'a> LocalDao<'a> {
     pub fn new(pool: &'a sqlx::SqlitePool) -> Self {
         Self { pool }
     }
 }
-impl<'a> PersistenceService<Scenario> for LocalPersistenceService<'a> {
+impl<'a> DataAccess<Scenario> for LocalDao<'a> {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<Scenario>> {
         sqlx::query_as!(Scenario, "SELECT * FROM scenario WHERE id = ?1", id)
             .fetch_optional(self.pool)
@@ -68,12 +69,13 @@ impl<'a> PersistenceService<Scenario> for LocalPersistenceService<'a> {
 }
 
 ////////////////////////////////////////
-/// RemotePersistenceService
-pub struct RemotePersistenceService {
+// RemoteDao
+
+pub struct RemoteDao {
     base_url: String,
     client: reqwest::Client,
 }
-impl RemotePersistenceService {
+impl RemoteDao {
     pub fn new(base_url: &str) -> Self {
         let base_url = base_url.strip_suffix('/').unwrap_or(base_url);
         Self {
@@ -82,7 +84,7 @@ impl RemotePersistenceService {
         }
     }
 }
-impl PersistenceService<Scenario> for RemotePersistenceService {
+impl DataAccess<Scenario> for RemoteDao {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<Scenario>> {
         self.client
             .get(format!("{}/scenario?id={id}", self.base_url))
@@ -123,7 +125,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_local_scenario_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
-        let scenario_service = LocalPersistenceService::new(&pool);
+        let scenario_service = LocalDao::new(&pool);
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
 

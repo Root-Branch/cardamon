@@ -1,13 +1,41 @@
-use anyhow::{anyhow, Context};
-use std::{fs, future::Future, path};
-
 pub mod cpu_metrics;
 pub mod scenario;
 
-pub trait PersistenceService<T> {
+use anyhow::{anyhow, Context};
+use sqlx::SqlitePool;
+use std::{fs, future::Future, path};
+
+pub trait DataAccess<T> {
     fn fetch(&self, id: &str) -> impl Future<Output = anyhow::Result<Option<T>>> + Send;
     fn persist(&self, model: &T) -> impl Future<Output = anyhow::Result<()>> + Send;
     fn delete(&self, id: &str) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
+pub enum DataAccessService<'a> {
+    Local {
+        scenario_dao: scenario::LocalDao<'a>,
+        cpu_metrics_dao: cpu_metrics::LocalDao<'a>,
+    },
+
+    Remote {
+        scenario_dao: scenario::RemoteDao,
+        cpu_metrics_dao: cpu_metrics::RemoteDao,
+    },
+}
+impl<'a> DataAccessService<'a> {
+    pub fn local(pool: &'a SqlitePool) -> DataAccessService<'a> {
+        DataAccessService::Local {
+            scenario_dao: scenario::LocalDao::new(pool),
+            cpu_metrics_dao: cpu_metrics::LocalDao::new(pool),
+        }
+    }
+
+    pub fn remote(base_url: &str) -> DataAccessService<'a> {
+        DataAccessService::Remote {
+            scenario_dao: scenario::RemoteDao::new(base_url),
+            cpu_metrics_dao: cpu_metrics::RemoteDao::new(base_url),
+        }
+    }
 }
 
 pub async fn connect(conn_str: &str) -> anyhow::Result<sqlx::SqlitePool> {
