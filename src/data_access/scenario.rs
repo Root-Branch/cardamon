@@ -7,6 +7,7 @@ pub struct Scenario {
     pub id: String,
     pub cardamon_run_id: String,
     pub scenario_name: String,
+    pub iteration: i64,
     pub start_time: i64,
     pub stop_time: i64,
 }
@@ -14,6 +15,7 @@ impl Scenario {
     pub fn new(
         cardamon_run_id: &str,
         scenario_name: &str,
+        iteration: i64,
         start_time: i64,
         stop_time: i64,
     ) -> Self {
@@ -21,6 +23,7 @@ impl Scenario {
             id: nanoid!(5),
             cardamon_run_id: String::from(cardamon_run_id),
             scenario_name: String::from(scenario_name),
+            iteration,
             start_time,
             stop_time,
         }
@@ -47,10 +50,11 @@ impl<'a> DataAccess<Scenario> for LocalDao<'a> {
     }
 
     async fn persist(&self, scenario: &Scenario) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO scenario (id, cardamon_run_id, scenario_name, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5)", 
+        sqlx::query!("INSERT INTO scenario (id, cardamon_run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", 
             scenario.id,
             scenario.cardamon_run_id,
             scenario.scenario_name,
+            scenario.iteration,
             scenario.start_time,
             scenario.stop_time)
             .execute(self.pool)
@@ -129,7 +133,7 @@ mod tests {
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
 
-        let scenario = Scenario::new("1", "1", timestamp, timestamp + 10000);
+        let scenario = Scenario::new("1", "my_scenario", 1, timestamp, timestamp + 10000);
         scenario_service.persist(&scenario).await?;
 
         match scenario_service.fetch(&scenario.id).await? {
