@@ -5,7 +5,7 @@
  */
 
 pub mod cpu_metrics;
-pub mod scenario;
+pub mod scenario_run;
 
 use anyhow::{anyhow, Context};
 use sqlx::SqlitePool;
@@ -19,26 +19,26 @@ pub trait DataAccess<T> {
 
 pub enum DataAccessService<'a> {
     Local {
-        scenario_dao: scenario::LocalDao<'a>,
+        scenario_dao: scenario_run::LocalDao<'a>,
         cpu_metrics_dao: cpu_metrics::LocalDao<'a>,
     },
 
     Remote {
-        scenario_dao: scenario::RemoteDao,
+        scenario_dao: scenario_run::RemoteDao,
         cpu_metrics_dao: cpu_metrics::RemoteDao,
     },
 }
 impl<'a> DataAccessService<'a> {
     pub fn local(pool: &'a SqlitePool) -> DataAccessService<'a> {
         DataAccessService::Local {
-            scenario_dao: scenario::LocalDao::new(pool),
+            scenario_dao: scenario_run::LocalDao::new(pool),
             cpu_metrics_dao: cpu_metrics::LocalDao::new(pool),
         }
     }
 
     pub fn remote(base_url: &str) -> DataAccessService<'a> {
         DataAccessService::Remote {
-            scenario_dao: scenario::RemoteDao::new(base_url),
+            scenario_dao: scenario_run::RemoteDao::new(base_url),
             cpu_metrics_dao: cpu_metrics::RemoteDao::new(base_url),
         }
     }

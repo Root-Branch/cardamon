@@ -9,7 +9,7 @@ use anyhow::Context;
 use nanoid::nanoid;
 
 #[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
-pub struct Scenario {
+pub struct ScenarioRun {
     pub id: String,
     pub cardamon_run_id: String,
     pub scenario_name: String,
@@ -17,7 +17,7 @@ pub struct Scenario {
     pub start_time: i64,
     pub stop_time: i64,
 }
-impl Scenario {
+impl ScenarioRun {
     pub fn new(
         cardamon_run_id: &str,
         scenario_name: &str,
@@ -47,15 +47,15 @@ impl<'a> LocalDao<'a> {
         Self { pool }
     }
 }
-impl<'a> DataAccess<Scenario> for LocalDao<'a> {
-    async fn fetch(&self, id: &str) -> anyhow::Result<Option<Scenario>> {
-        sqlx::query_as!(Scenario, "SELECT * FROM scenario WHERE id = ?1", id)
+impl<'a> DataAccess<ScenarioRun> for LocalDao<'a> {
+    async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioRun>> {
+        sqlx::query_as!(ScenarioRun, "SELECT * FROM scenario WHERE id = ?1", id)
             .fetch_optional(self.pool)
             .await
             .context("Error fetching scenario with id {id}")
     }
 
-    async fn persist(&self, scenario: &Scenario) -> anyhow::Result<()> {
+    async fn persist(&self, scenario: &ScenarioRun) -> anyhow::Result<()> {
         sqlx::query!("INSERT INTO scenario (id, cardamon_run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", 
             scenario.id,
             scenario.cardamon_run_id,
@@ -94,18 +94,18 @@ impl RemoteDao {
         }
     }
 }
-impl DataAccess<Scenario> for RemoteDao {
-    async fn fetch(&self, id: &str) -> anyhow::Result<Option<Scenario>> {
+impl DataAccess<ScenarioRun> for RemoteDao {
+    async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioRun>> {
         self.client
             .get(format!("{}/scenario?id={id}", self.base_url))
             .send()
             .await?
-            .json::<Option<Scenario>>()
+            .json::<Option<ScenarioRun>>()
             .await
             .context("Error fetching scenario with id {id} from remote server")
     }
 
-    async fn persist(&self, scenario: &Scenario) -> anyhow::Result<()> {
+    async fn persist(&self, scenario: &ScenarioRun) -> anyhow::Result<()> {
         self.client
             .post(format!("{}/scenario", self.base_url))
             .json(scenario)
@@ -139,7 +139,7 @@ mod tests {
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
 
-        let scenario = Scenario::new("1", "my_scenario", 1, timestamp, timestamp + 10000);
+        let scenario = ScenarioRun::new("1", "my_scenario", 1, timestamp, timestamp + 10000);
         scenario_service.persist(&scenario).await?;
 
         match scenario_service.fetch(&scenario.id).await? {

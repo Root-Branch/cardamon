@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS scenario (
+CREATE TABLE IF NOT EXISTS scenario_run (
     id TEXT NOT NULL PRIMARY KEY,
     cardamon_run_id TEXT NOT NULL,
     scenario_name TEXT NOT NULL,
