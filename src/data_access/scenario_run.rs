@@ -49,14 +49,14 @@ impl<'a> LocalDao<'a> {
 }
 impl<'a> DataAccess<ScenarioRun> for LocalDao<'a> {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioRun>> {
-        sqlx::query_as!(ScenarioRun, "SELECT * FROM scenario WHERE id = ?1", id)
+        sqlx::query_as!(ScenarioRun, "SELECT * FROM scenario_run WHERE id = ?1", id)
             .fetch_optional(self.pool)
             .await
             .context("Error fetching scenario with id {id}")
     }
 
     async fn persist(&self, scenario: &ScenarioRun) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO scenario (id, cardamon_run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", 
+        sqlx::query!("INSERT INTO scenario_run (id, cardamon_run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6)", 
             scenario.id,
             scenario.cardamon_run_id,
             scenario.scenario_name,
@@ -70,7 +70,7 @@ impl<'a> DataAccess<ScenarioRun> for LocalDao<'a> {
     }
 
     async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        sqlx::query!("DELETE FROM scenario WHERE id = ?1", id)
+        sqlx::query!("DELETE FROM scenario_run WHERE id = ?1", id)
             .execute(self.pool)
             .await
             .map(|_| ())
