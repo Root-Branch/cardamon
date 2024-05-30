@@ -3,12 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use crate::settings::Scenario;
+use crate::config::run::ScenarioToRun;
 use tokio::process::Command;
 
-pub async fn run_scenario(scenario: &Scenario) -> anyhow::Result<String> {
+pub async fn run_scenario(scenario_to_run: &ScenarioToRun) -> anyhow::Result<String> {
     // Split the scenario_command into a vector
-    let command_parts: Vec<&str> = scenario.command.split_whitespace().collect();
+    let command_parts: Vec<&str> = scenario_to_run.command.split_whitespace().collect();
 
     // Get the command and arguments
     let command = command_parts

@@ -7,16 +7,15 @@
 pub mod bare_metal;
 pub mod docker;
 
-use crate::{metrics::MetricsLog, scenario_runner, settings::Scenario};
+use crate::{
+    config::run::{ProcessToObserve, ScenarioToRun},
+    metrics::MetricsLog,
+    scenario_runner,
+};
 use itertools::Itertools;
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-
-pub enum Process {
-    BareMetal(bare_metal::BareMetalProcess),
-    Docker(docker::DockerProcess),
-}
 
 /// Logs a single scenario run
 ///
@@ -30,8 +29,8 @@ pub enum Process {
 /// A `Result` containing the metrics log for the given scenario or an `Error` if either
 /// the scenario failed to complete successfully or any of the loggers contained errors.
 pub async fn log_scenario(
-    scenario: Scenario,
-    processes: Vec<Process>,
+    scenario_to_run: ScenarioToRun,
+    processes_to_observe: Vec<ProcessToObserve>,
 ) -> anyhow::Result<MetricsLog> {
     // TODO: This function also needs to return the scenario run
 
@@ -40,18 +39,20 @@ pub async fn log_scenario(
     let shared_metrics_log = Arc::new(metrics_log_mutex);
 
     // split processes into bare metal & docker processes
-    let (bare_metal_procs, docker_procs): (Vec<_>, Vec<_>) =
-        processes.into_iter().partition_map(|proc| match proc {
-            Process::BareMetal(proc) => itertools::Either::Left(proc),
-            Process::Docker(proc) => itertools::Either::Right(proc),
-        });
+    let (pids, container_names): (Vec<_>, Vec<_>) =
+        processes_to_observe
+            .into_iter()
+            .partition_map(|proc| match proc {
+                ProcessToObserve::BareMetalId(id) => itertools::Either::Left(id),
+                ProcessToObserve::ContainerName(name) => itertools::Either::Right(name),
+            });
 
     // create a new cancellation token
     let token = CancellationToken::new();
 
     // start threads to collect metrics
     let mut join_set = JoinSet::new();
-    if !bare_metal_procs.is_empty() {
+    if !pids.is_empty() {
         let token = token.clone();
         let shared_metrics_log = shared_metrics_log.clone();
 
@@ -59,14 +60,14 @@ pub async fn log_scenario(
             tokio::select! {
                 _ = token.cancelled() => {}
                 _ = bare_metal::keep_logging(
-                        bare_metal_procs,
+                        pids,
                         shared_metrics_log,
                     ) => {}
             }
         });
     }
 
-    if !docker_procs.is_empty() {
+    if !container_names.is_empty() {
         let token = token.clone();
         let shared_metrics_log = shared_metrics_log.clone();
 
@@ -74,7 +75,7 @@ pub async fn log_scenario(
             tokio::select! {
                 _ = token.cancelled() => {}
                 _ = docker::keep_logging(
-                        docker_procs,
+                        container_names,
                         shared_metrics_log,
                     ) => {}
             }
@@ -82,7 +83,7 @@ pub async fn log_scenario(
     }
 
     // run the scenario
-    match scenario_runner::run_scenario(&scenario).await {
+    match scenario_runner::run_scenario(&scenario_to_run).await {
         Ok(_) => {
             tracing::info!("Scenario completed successfully");
 
@@ -148,7 +149,10 @@ pub async fn log_scenario(
 /// # Returns
 ///
 /// This function does not return, it requires that it's thread is cancelled.
-pub async fn log_live(_processes: Vec<Process>, _metrics_log: Arc<Mutex<MetricsLog>>) {
+pub async fn log_live(
+    _processes_to_observe: Vec<ProcessToObserve>,
+    _metrics_log: Arc<Mutex<MetricsLog>>,
+) {
     // TODO: This should do exactly what log_scenario does but it should save the shared_metrics_log
     // at regular fixed intervals (either space or time)
     todo!("implement this!")

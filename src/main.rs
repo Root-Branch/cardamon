@@ -1,5 +1,4 @@
-use anyhow::Context;
-use cardamon::{clap_args, settings};
+use cardamon::{clap_args, config};
 use dotenv::dotenv;
 
 #[tokio::main]
@@ -17,8 +16,7 @@ async fn main() -> anyhow::Result<()> {
     match args.command {
         clap_args::Commands::Run { name } => {
             println!("Running with config name {} ", name);
-            let _settings =
-                settings::parse(name, args.verbose).context("Failed to parse settings:")?;
+            let _config = config::Config::from_path(std::path::Path::new("./cardamon.toml"))?;
         }
     }
     Ok(())

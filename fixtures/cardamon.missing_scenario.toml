@@ -1,0 +1,24 @@
+debug_level = "info"
+metrics_server_url = "http://cardamon.rootandbranch.io"
+
+[[processes]]
+type = "docker"
+name = "db"
+containers = ["postgres"]
+command = "powershell sleep 5" # "docker compose up -d"
+
+[[processes]]
+type = "baremetal"
+name = "server"
+command = "powershell sleep 5" # "yarn dev"
+
+[[scenarios]]
+name = "basket_10"
+desc = "Adds ten items to the basket"
+command = "node ./scenarios/basket_10.js"
+
+[[observations]]
+name = "checkout"
+processes = ["db", "server"]
+scenarios = ["missing"]
+iterations = 1
