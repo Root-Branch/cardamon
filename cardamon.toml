@@ -1,75 +1,27 @@
-# Global settings
-[global]
-debug_level = "info"
+debug_level = "info"                                    # Optional - defaults to "info"
+metrics_server_url = "http://cardamon.rootandbranch.io" # Optional - assumes local db if not specifed
 
-# Define configs
-[[config]]
-name = "dev"
-# sqlite when just "path_name"
-# can use postgres via:
-# "postgres://user:password@localhost:5432/db2"
-database_url = "dev.db" 
+[[processes]]
+type = "docker"
+name = "db"                      # Required - must be unique among ALL processes
+containers = ["postgres"]        # Required
+command = "docker compose up -d" # Required
 
-  [[config.scenario]]
-  #name = "Run specific node command ( 2 iterations) "
-  iterations = 2
-  commands = [
-      "node scenarios/dev/1_sleep.js",
-      "node scenarios/dev/2_sleep.js"
-  ]
+[[processes]]
+type = "bare_metal"
+name = "server"      # Required
+command = "yarn dev" # Required
 
-  [[config.scenario]]
-  # Name is an optional field
-  # It will default to the command name (formatted)
-  # In this case: "node scenarios/dev/run_dir/1_dir_sleep.js"
-  # and  "node scenarios/dev/run_dir/2_dir_sleep.js"
-  #name = "Dev scenarios"
-  # Iterations is also optional, will default to 1
-  # iterations = 1
-  directory = "scenarios/dev/run_dir"
-  command = "node {file}"
+[[scenarios]]
+name = "basket_10"                        # Required
+desc = "Adds ten items to the basket"     # Optional 
+command = "node ./scenarios/basket_10.js" # Required - commands for running scenarios
 
-[[config]]
-name = "cicd"
-database_url = "cicd.db" 
-
-  [[config.scenario]]
-  name = "Python tests - iterate once"
-  iterations = 1
-  commands = [
-      "python scenarios/cicd/1_script.py",
-      "python scenarios/cicd/2_script.py"
-  ]
-  
-  [[config.scenario]]
-  name = "Build project"
-  commands = ["(cd scenarios/cicd/go/ && go build -o card && ./card && rm card && cd -)"]
-  # Navigate to go directory in a subshell, build project, run, delete, navigate back"
-
-[[config]]
-name = "live"
-database_url = "live.db"
-
-  [[config.scenario]]
-  name = "node tests"
-  commands = [
-      "node test scenarios/live/test_one.js",
-      "node test scenarios/live/test_two.js"
-  ]
-
-  [[config.scenario]]
-  name = "go tests"
-  directory = "scenarios/live/go-tests/"
-  command = "go test {file}"
-
-[[config]]
-name = "test"
-database_url = "test.db"
-    [[config.scenario]]
-    name = "Run py stress test"
-    iterations = 2
-    commands = [
-        "python examples/docker-python/stress_client.py"
-    ]
-
-
+[[observations]]
+name = "checkout processes" # Required
+processes = [
+  "db",
+  "server",
+] # Required - prepend process name with `_` to ignore
+scenarios = ["basket_10"] # Required
+iterations = 1 # Optional - defaults to 1
