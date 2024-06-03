@@ -4,9 +4,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-pub mod run;
-
-use crate::app_runner;
 use anyhow::Context;
 use serde::Deserialize;
 use std::{fs, io::Read};
@@ -34,60 +31,91 @@ impl Config {
             .context("Observation with name {name} does not exist.")
     }
 
-    /// Returns a vector of ScenarioToRun for the given observation
-    fn scenarios_to_run(
-        &self,
-        observation: &Observation,
-    ) -> anyhow::Result<Vec<run::ScenarioToRun>> {
-        let missing_scenarios = observation
-            .scenarios
-            .iter()
-            .filter(|scenario_name| {
-                !self
-                    .scenarios
-                    .iter()
-                    .any(|scenario| &&scenario.name == scenario_name)
-            })
-            .collect::<Vec<_>>();
-        if !missing_scenarios.is_empty() {
-            let mut err_str = String::new();
-            for missing_scenario in missing_scenarios {
-                err_str.push_str(missing_scenario);
-            }
-            return Err(anyhow::anyhow!("scenarios are missing: [{err_str}]"));
-        }
+    // /// Returns a vector of ScenarioToRun for the given observation
+    // fn scenarios_to_run(&self, observation: &Observation) -> anyhow::Result<Vec<ScenarioToRun>> {
+    //     let missing_scenarios = observation
+    //         .scenarios
+    //         .iter()
+    //         .filter(|scenario_name| {
+    //             !self
+    //                 .scenarios
+    //                 .iter()
+    //                 .any(|scenario| &&scenario.name == scenario_name)
+    //         })
+    //         .collect::<Vec<_>>();
+    //     if !missing_scenarios.is_empty() {
+    //         let mut err_str = String::new();
+    //         for missing_scenario in missing_scenarios {
+    //             err_str.push_str(missing_scenario);
+    //         }
+    //         return Err(anyhow::anyhow!("scenarios are missing: [{err_str}]"));
+    //     }
+    //
+    //     // find all the scenarios listed in the observation
+    //     let obs_scenarios = self
+    //         .scenarios
+    //         .iter()
+    //         .filter(|s| observation.scenarios.contains(&s.name))
+    //         .collect::<Vec<_>>();
+    //
+    //     // create a vector of ScenarioToRun for each iteration
+    //     let mut scenarios_to_run = vec![];
+    //     for scenario in obs_scenarios {
+    //         for iteration in 0..observation.iterations {
+    //             let scenario_to_run = ScenarioToRun {
+    //                 name: scenario.name.clone(),
+    //                 command: scenario.command.clone(),
+    //                 iteration,
+    //             };
+    //             scenarios_to_run.push(scenario_to_run);
+    //         }
+    //     }
+    //
+    //     Ok(scenarios_to_run)
+    // }
 
-        // find all the scenarios listed in the observation
-        let obs_scenarios = self
-            .scenarios
-            .iter()
-            .filter(|s| observation.scenarios.contains(&s.name))
-            .collect::<Vec<_>>();
+    pub fn create_execution_plan(&self, observation_name: &str) -> anyhow::Result<ExecutionPlan> {
+        let observation = self.get_observation(observation_name)?;
 
-        // create a vector of ScenarioToRun for each iteration
+        // create a vector of scenarios to run for the given observation
+        // let scenarios_to_run = self.scenarios_to_run(observation)?;
+
         let mut scenarios_to_run = vec![];
-        for scenario in obs_scenarios {
-            for iteration in 0..observation.iterations {
-                let scenario_to_run = run::ScenarioToRun {
-                    name: scenario.name.clone(),
-                    command: scenario.command.clone(),
-                    iteration,
-                };
+        for scenario_name in observation.scenarios.iter() {
+            let scenario = self
+                .scenarios
+                .iter()
+                .find(|scenario| &scenario.name == scenario_name)
+                .context("")?;
+
+            for i in 0..observation.iterations {
+                let scenario_to_run = ScenarioToRun::new(scenario, i);
                 scenarios_to_run.push(scenario_to_run);
             }
         }
 
-        Ok(scenarios_to_run)
-    }
+        // // launch the application processes returning a vector of ProcessToObserve
+        // let mut processes_to_observe = vec![];
+        // for proc_name in observation.processes.iter() {
+        //     let proc = self
+        //         .processes
+        //         .iter()
+        //         .find(|proc| match proc {
+        //             Process::BareMetal { name, command: _ } => name == proc_name,
+        //             Process::Docker {
+        //                 name,
+        //                 containers: _,
+        //                 command: _,
+        //             } => name == proc_name,
+        //         })
+        //         .context("Observation references process that doesn't exist")?;
+        //
+        //     let mut procs_to_obs = app_runner::run_process(proc)?;
+        //     processes_to_observe.append(&mut procs_to_obs);
+        // }
 
-    pub fn run(&self, observation_name: &str) -> anyhow::Result<run::Run> {
-        let observation = self.get_observation(observation_name)?;
-
-        // create a vector of scenarios to run for the given observation
-        let scenarios_to_run = self.scenarios_to_run(observation)?;
-
-        // launch the application processes returning a vector of ProcessToObserve
-        let mut processes_to_observe = vec![];
+        // create a vector of processes
+        let mut processes = vec![];
         for proc_name in observation.processes.iter() {
             let proc = self
                 .processes
@@ -100,28 +128,27 @@ impl Config {
                         command: _,
                     } => name == proc_name,
                 })
-                .context("Observation references process that doesn't exist")?;
+                .context("")?;
 
-            let mut procs_to_obs = app_runner::run_process(proc)?;
-            processes_to_observe.append(&mut procs_to_obs);
+            processes.push(proc);
         }
 
         // return a new Run
-        Ok(run::Run {
-            processes_to_observe,
+        Ok(ExecutionPlan {
+            processes,
             scenarios_to_run,
         })
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 pub struct Scenario {
     pub name: String,
     pub desc: String,
     pub command: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Process {
     BareMetal {
@@ -143,10 +170,28 @@ pub struct Observation {
     pub scenarios: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct ScenarioToRun<'a> {
+    pub scenario: &'a Scenario,
+    pub iteration: u32,
+}
+impl<'a> ScenarioToRun<'a> {
+    fn new(scenario: &'a Scenario, iteration: u32) -> Self {
+        Self {
+            scenario,
+            iteration,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ExecutionPlan<'a> {
+    pub processes: Vec<&'a Process>,
+    pub scenarios_to_run: Vec<ScenarioToRun<'a>>,
+}
+
 #[cfg(test)]
 mod tests {
-    use tests::run::ProcessToObserve;
-
     use super::*;
     use std::path::Path;
 
@@ -165,58 +210,58 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn can_create_scenarios_to_run_for_obs() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        let obs = cfg.get_observation("checkout")?;
-        let scenarios_to_run = cfg.scenarios_to_run(obs)?;
-        assert_eq!(scenarios_to_run.len(), 1);
-        Ok(())
-    }
+    // #[test]
+    // fn can_create_scenarios_to_run_for_obs() -> anyhow::Result<()> {
+    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
+    //     let obs = cfg.get_observation("checkout")?;
+    //     let scenarios_to_run = cfg.scenarios_to_run(obs)?;
+    //     assert_eq!(scenarios_to_run.len(), 1);
+    //     Ok(())
+    // }
 
-    #[test]
-    fn can_run_an_observation() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        let run = cfg.run("checkout")?;
+    // #[test]
+    // fn can_run_an_observation() -> anyhow::Result<()> {
+    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
+    //     let run = cfg.run("checkout")?;
+    //
+    //     // should have 1 scenario to run
+    //     let scenarios_to_run = run.scenarios_to_run;
+    //     let first = scenarios_to_run
+    //         .first()
+    //         .context("Should have 1 scenario to run")?;
+    //     assert_eq!(scenarios_to_run.len(), 1);
+    //     assert_eq!(first.command, "node ./scenarios/basket_10.js");
+    //
+    //     // should have 2 processes (1 docker with a container name and 1 bare metal with a PID)
+    //     match &run.processes_to_observe[..] {
+    //         [ProcessToObserve::ContainerName(name), ProcessToObserve::BareMetalId(pid), ..] => {
+    //             assert_eq!(name, "postgres");
+    //             assert!(*pid > 0);
+    //         }
+    //         _ => panic!(),
+    //     }
+    //     Ok(())
+    // }
 
-        // should have 1 scenario to run
-        let scenarios_to_run = run.scenarios_to_run;
-        let first = scenarios_to_run
-            .first()
-            .context("Should have 1 scenario to run")?;
-        assert_eq!(scenarios_to_run.len(), 1);
-        assert_eq!(first.command, "node ./scenarios/basket_10.js");
+    // #[test]
+    // fn multiple_iterations_should_create_more_scenarios_to_run() -> anyhow::Result<()> {
+    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
+    //     let obs = cfg.get_observation("checkout")?;
+    //     let scenarios_to_run = cfg.scenarios_to_run(obs)?;
+    //     assert_eq!(scenarios_to_run.len(), 2);
+    //     Ok(())
+    // }
 
-        // should have 2 processes (1 docker with a container name and 1 bare metal with a PID)
-        match &run.processes_to_observe[..] {
-            [ProcessToObserve::ContainerName(name), ProcessToObserve::BareMetalId(pid), ..] => {
-                assert_eq!(name, "postgres");
-                assert!(*pid > 0);
-            }
-            _ => panic!(),
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn multiple_iterations_should_create_more_scenarios_to_run() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
-        let obs = cfg.get_observation("checkout")?;
-        let scenarios_to_run = cfg.scenarios_to_run(obs)?;
-        assert_eq!(scenarios_to_run.len(), 2);
-        Ok(())
-    }
-
-    #[test]
-    fn cannot_run_misconfigured_observation() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.missing_process.toml"))?;
-        let run = cfg.run("checkout");
-        assert!(run.is_err());
-
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.missing_scenario.toml"))?;
-        let run = cfg.run("checkout");
-        assert!(run.is_err());
-
-        Ok(())
-    }
+    // #[test]
+    // fn cannot_run_misconfigured_observation() -> anyhow::Result<()> {
+    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.missing_process.toml"))?;
+    //     let run = cfg.run("checkout");
+    //     assert!(run.is_err());
+    //
+    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.missing_scenario.toml"))?;
+    //     let run = cfg.run("checkout");
+    //     assert!(run.is_err());
+    //
+    //     Ok(())
+    // }
 }

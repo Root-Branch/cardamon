@@ -16,8 +16,6 @@ anyhow = {version = "1.0.75", features = ["std"]}
 axum = { version = "0.7.1", features = ["json", "macros"] }
 chrono = { version = "0.4.31", features = ["serde"] }
 clap = { version = "4.4.10", features = ["derive"] }
-dotenv = "0.15.0"
-env_logger = "0.11.3"
 nanoid = "0.4.0"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.117"

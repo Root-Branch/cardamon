@@ -58,12 +58,16 @@ async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics
     if let Some(process) = system.process(Pid::from_u32(pid)) {
         let cpu_usage = process.cpu_usage() as f64;
         let core_count = system.physical_core_count().unwrap_or(0) as i32;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis() as i64;
 
         let metrics = CpuMetrics {
             process_id: format!("{pid}"),
             process_name: process.name().to_string(),
             cpu_usage,
             core_count,
+            timestamp,
         };
 
         Ok(metrics)

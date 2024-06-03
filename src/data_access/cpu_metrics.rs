@@ -7,7 +7,6 @@
 use super::DataAccess;
 use anyhow::Context;
 use nanoid::nanoid;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct CpuMetrics {
@@ -28,12 +27,8 @@ impl CpuMetrics {
         cpu_usage: f64,
         total_usage: f64,
         core_count: i64,
+        timestamp: i64,
     ) -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("UNIX_EPOCH should be before now!")
-            .as_millis() as i64; // we can worry about this conversion in 1000 years time!
-
         CpuMetrics {
             id: nanoid!(5),
             cardamon_run_id: String::from(cardamon_run_id),
@@ -50,18 +45,18 @@ impl CpuMetrics {
 // //////////////////////////////////////
 // LocalDao
 
-pub struct LocalDao<'a> {
-    pub pool: &'a sqlx::SqlitePool,
+pub struct LocalDao {
+    pub pool: sqlx::SqlitePool,
 }
-impl<'a> LocalDao<'a> {
-    pub fn new(pool: &'a sqlx::SqlitePool) -> Self {
+impl LocalDao {
+    pub fn new(pool: sqlx::SqlitePool) -> Self {
         Self { pool }
     }
 }
-impl<'a> DataAccess<CpuMetrics> for LocalDao<'a> {
+impl DataAccess<CpuMetrics> for LocalDao {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<CpuMetrics>> {
         sqlx::query_as!(CpuMetrics, "SELECT * FROM cpu_metrics WHERE id = ?1", id)
-            .fetch_optional(self.pool)
+            .fetch_optional(&self.pool)
             .await
             .context("Error fetching cpu metrics from db.")
     }
@@ -78,7 +73,7 @@ impl<'a> DataAccess<CpuMetrics> for LocalDao<'a> {
             metrics.core_count,
             metrics.timestamp
         )
-            .execute(self.pool)
+            .execute(&self.pool)
             .await
             .map(|_| ())
             .context("Error inserting cpu metrics into db.")
@@ -86,7 +81,7 @@ impl<'a> DataAccess<CpuMetrics> for LocalDao<'a> {
 
     async fn delete(&self, id: &str) -> anyhow::Result<()> {
         sqlx::query!("DELETE FROM cpu_metrics WHERE id = ?1", id)
-            .execute(self.pool)
+            .execute(&self.pool)
             .await
             .map(|_| ())
             .context("Error deleting cpu metrics with id {id}")
@@ -145,12 +140,16 @@ impl DataAccess<CpuMetrics> for RemoteDao {
 mod tests {
     use super::*;
     use core::panic;
+    use std::time;
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_local_cpu_metrics_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
-        let metrics_service = LocalDao::new(&pool);
+        let metrics_service = LocalDao::new(pool.clone());
+        let now = time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)?
+            .as_millis() as i64;
 
-        let metrics = CpuMetrics::new("1", "1", "test_process", 200_f64, 100_f64, 4);
+        let metrics = CpuMetrics::new("1", "1", "test_process", 200_f64, 100_f64, 4, now);
         metrics_service.persist(&metrics).await?;
 
         match metrics_service.fetch(&metrics.id).await? {
