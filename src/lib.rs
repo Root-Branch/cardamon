@@ -217,6 +217,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(target_family = "windows")]
     async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
         let process = Process::BareMetal {
             name: "sleep".to_string(),
