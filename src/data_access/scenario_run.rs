@@ -39,18 +39,18 @@ impl ScenarioRun {
 // //////////////////////////////////////
 // LocalDao
 
-pub struct LocalDao<'a> {
-    pub pool: &'a sqlx::SqlitePool,
+pub struct LocalDao {
+    pub pool: sqlx::SqlitePool,
 }
-impl<'a> LocalDao<'a> {
-    pub fn new(pool: &'a sqlx::SqlitePool) -> Self {
+impl LocalDao {
+    pub fn new(pool: sqlx::SqlitePool) -> Self {
         Self { pool }
     }
 }
-impl<'a> DataAccess<ScenarioRun> for LocalDao<'a> {
+impl DataAccess<ScenarioRun> for LocalDao {
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioRun>> {
         sqlx::query_as!(ScenarioRun, "SELECT * FROM scenario_run WHERE id = ?1", id)
-            .fetch_optional(self.pool)
+            .fetch_optional(&self.pool)
             .await
             .context("Error fetching scenario with id {id}")
     }
@@ -63,7 +63,7 @@ impl<'a> DataAccess<ScenarioRun> for LocalDao<'a> {
             scenario.iteration,
             scenario.start_time,
             scenario.stop_time)
-            .execute(self.pool)
+            .execute(&self.pool)
             .await
             .map(|_| ())
             .context("Error inserting scenario into db.")
@@ -71,7 +71,7 @@ impl<'a> DataAccess<ScenarioRun> for LocalDao<'a> {
 
     async fn delete(&self, id: &str) -> anyhow::Result<()> {
         sqlx::query!("DELETE FROM scenario_run WHERE id = ?1", id)
-            .execute(self.pool)
+            .execute(&self.pool)
             .await
             .map(|_| ())
             .context("Error deleting scenario with id {id}")
@@ -135,7 +135,7 @@ mod tests {
 
     #[sqlx::test(migrations = "./migrations")]
     async fn test_local_scenario_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
-        let scenario_service = LocalDao::new(&pool);
+        let scenario_service = LocalDao::new(pool.clone());
 
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
 

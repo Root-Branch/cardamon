@@ -8,7 +8,10 @@ pub mod cpu_metrics;
 pub mod scenario_run;
 
 use anyhow::{anyhow, Context};
+use cpu_metrics::CpuMetrics;
+use scenario_run::ScenarioRun;
 use sqlx::SqlitePool;
+use std::rc::Rc;
 use std::{fs, future::Future, path};
 
 pub trait DataAccess<T> {
@@ -17,30 +20,58 @@ pub trait DataAccess<T> {
     fn delete(&self, id: &str) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
-pub enum DataAccessService<'a> {
-    Local {
-        scenario_dao: scenario_run::LocalDao<'a>,
-        cpu_metrics_dao: cpu_metrics::LocalDao<'a>,
-    },
-
-    Remote {
-        scenario_dao: scenario_run::RemoteDao,
-        cpu_metrics_dao: cpu_metrics::RemoteDao,
-    },
+pub trait DataAccessService {
+    fn scenario_run_dao(&self) -> Rc<impl DataAccess<ScenarioRun>>;
+    fn cpu_metrics_dao(&self) -> Rc<impl DataAccess<CpuMetrics>>;
 }
-impl<'a> DataAccessService<'a> {
-    pub fn local(pool: &'a SqlitePool) -> DataAccessService<'a> {
-        DataAccessService::Local {
-            scenario_dao: scenario_run::LocalDao::new(pool),
-            cpu_metrics_dao: cpu_metrics::LocalDao::new(pool),
+
+pub struct LocalDataAccessService {
+    scenario_run_dao: Rc<scenario_run::LocalDao>,
+    cpu_metrics_dao: Rc<cpu_metrics::LocalDao>,
+}
+impl LocalDataAccessService {
+    pub fn new(pool: SqlitePool) -> Self {
+        let scenario_run_dao = Rc::new(scenario_run::LocalDao::new(pool.clone()));
+        let cpu_metrics_dao = Rc::new(cpu_metrics::LocalDao::new(pool.clone()));
+
+        Self {
+            scenario_run_dao,
+            cpu_metrics_dao,
         }
     }
+}
+impl DataAccessService for LocalDataAccessService {
+    fn scenario_run_dao(&self) -> Rc<impl DataAccess<ScenarioRun>> {
+        self.scenario_run_dao.clone()
+    }
 
-    pub fn remote(base_url: &str) -> DataAccessService<'a> {
-        DataAccessService::Remote {
-            scenario_dao: scenario_run::RemoteDao::new(base_url),
-            cpu_metrics_dao: cpu_metrics::RemoteDao::new(base_url),
+    fn cpu_metrics_dao(&self) -> Rc<impl DataAccess<CpuMetrics>> {
+        self.cpu_metrics_dao.clone()
+    }
+}
+
+pub struct RemoteDataAccessService {
+    scenario_run_dao: Rc<scenario_run::RemoteDao>,
+    cpu_metrics_dao: Rc<cpu_metrics::RemoteDao>,
+}
+impl RemoteDataAccessService {
+    pub fn new(base_url: &str) -> Self {
+        let scenario_run_dao = Rc::new(scenario_run::RemoteDao::new(base_url));
+        let cpu_metrics_dao = Rc::new(cpu_metrics::RemoteDao::new(base_url));
+
+        Self {
+            scenario_run_dao,
+            cpu_metrics_dao,
         }
+    }
+}
+impl DataAccessService for RemoteDataAccessService {
+    fn scenario_run_dao(&self) -> Rc<impl DataAccess<ScenarioRun>> {
+        self.scenario_run_dao.clone()
+    }
+
+    fn cpu_metrics_dao(&self) -> Rc<impl DataAccess<CpuMetrics>> {
+        self.cpu_metrics_dao.clone()
     }
 }
 

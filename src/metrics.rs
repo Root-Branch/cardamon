@@ -4,6 +4,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use crate::data_access;
+
 #[derive(Debug)]
 pub struct MetricsLog {
     log: Vec<CpuMetrics>,
@@ -49,4 +51,18 @@ pub struct CpuMetrics {
     pub process_name: String,
     pub cpu_usage: f64,
     pub core_count: i32,
+    pub timestamp: i64,
+}
+impl CpuMetrics {
+    pub fn into_data_access(&self, cardamon_run_id: &str) -> data_access::cpu_metrics::CpuMetrics {
+        data_access::cpu_metrics::CpuMetrics::new(
+            cardamon_run_id,
+            &self.process_id,
+            &self.process_name,
+            self.cpu_usage,
+            0_f64,
+            self.core_count as i64,
+            self.timestamp,
+        )
+    }
 }
