@@ -1,13 +1,14 @@
+mod errors;
+
 use axum::{
     extract::{Path, State},
     response::IntoResponse,
     Json,
 };
 use cardamon::data_access::cpu_metrics::CpuMetrics;
+use errors::ServerError;
 use sqlx::SqlitePool;
 use tracing::instrument;
-
-use super::errors::ServerError;
 
 // Must receive data from src/data_access/cpu_metrics.rs in this format:
 /*
@@ -89,6 +90,7 @@ pub async fn delete_metrics(
     tracing::info!("Metrics deleted successfully");
     Ok("Metrics deleted".to_string())
 }
+
 async fn fetch_metrics_from_db(
     pool: &SqlitePool,
     metrics_id: &str,
@@ -102,6 +104,7 @@ async fn fetch_metrics_from_db(
     .await?;
     Ok(result)
 }
+
 async fn insert_metrics_into_db(
     pool: &SqlitePool,
     metrics: &CpuMetrics,

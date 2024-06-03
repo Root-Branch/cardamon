@@ -1,17 +1,15 @@
-use std::fs::File;
+mod server;
 
-use axum::routing::{delete, get, post};
-use axum::Router;
+use axum::routing::{delete, get, post, Router};
 use dotenv::dotenv;
-use server::routes::{delete_metrics, fetch_metrics, persist_metrics};
+use server::{delete_metrics, fetch_metrics, persist_metrics};
 use sqlx::sqlite::SqlitePool;
-use tracing::subscriber::set_global_default;
-use tracing::{info, Subscriber};
+use std::fs::File;
+use tracing::{info, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
-use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
-mod server;
+use tracing_subscriber::{fmt::writer::MakeWriterExt, layer::SubscriberExt, EnvFilter, Registry};
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
@@ -35,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await.unwrap();
     Ok(())
 }
+
 // Keep seperated for integraion tests
 async fn create_app(pool: SqlitePool) -> Router {
     // Middleware later
@@ -49,6 +48,7 @@ async fn create_app(pool: SqlitePool) -> Router {
         .route("/cpu_metrics/:id", delete(delete_metrics))
         .with_state(pool)
 }
+
 fn get_subscriber(name: String, env_filter: String) -> impl Subscriber + Sync + Send {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter));
