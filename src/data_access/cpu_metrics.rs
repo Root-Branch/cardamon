@@ -167,4 +167,28 @@ mod tests {
         pool.close().await;
         Ok(())
     }
+/*
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_remote_cpu_metrics_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
+        let metrics_service = RemoteDao::new("http://127.0.0.1:4001");
+
+        let metrics = CpuMetrics::new("1", "1", "test_process", 200_f64, 100_f64, 4);
+        metrics_service.persist(&metrics).await?;
+
+        match metrics_service.fetch(&metrics.id).await? {
+            Some(fetched) => assert_eq!(fetched, metrics),
+            None => panic!("metrics not found!"),
+        }
+
+        metrics_service.delete(&metrics.id).await?;
+
+        match metrics_service.fetch(&metrics.id).await {
+            Ok(m) => panic!("Metrics found after delete {:?}", m),
+            Err(_) => (), // Expected none
+        }
+
+        pool.close().await;
+        Ok(())
+    }
+    */
 }
