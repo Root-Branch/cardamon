@@ -45,7 +45,7 @@ impl Default for MetricsLog {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CpuMetrics {
     pub process_id: String,
     pub process_name: String,
