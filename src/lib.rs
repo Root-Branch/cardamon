@@ -1,13 +1,15 @@
 pub mod config;
 pub mod data_access;
+pub mod dataset;
 pub mod metrics;
 pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
 use config::{ExecutionPlan, ScenarioToRun};
-use data_access::{scenario_run::ScenarioRun, DataAccess, DataAccessService};
+use data_access::{scenario_run::ScenarioRun, DataAccessService};
+use dataset::ObservationDataset;
 use std::time;
-use subprocess::Exec;
+use subprocess::{Exec, NullFile};
 
 pub enum ProcessToObserve {
     ProcId(u32),
@@ -34,6 +36,7 @@ fn run_command_detached(command: &str) -> anyhow::Result<u32> {
             }
 
             exec.detached()
+                .stdout(NullFile)
                 .popen()
                 .context("Failed to spawn detached process")?
                 .pid()
@@ -132,25 +135,25 @@ async fn run_scenario<'a>(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
-    data_access_service: &impl DataAccessService,
-) -> anyhow::Result<()> {
+    data_access_service: &dyn DataAccessService,
+) -> anyhow::Result<ObservationDataset> {
     // create a unique cardamon run id
     let cardamon_run_id = nanoid::nanoid!(5);
 
     // run the application
     let mut processes_to_observe = vec![];
-    for proc in exec_plan.processes {
+    for proc in exec_plan.processes.iter() {
         let process_to_observe = run_process(proc)?;
         processes_to_observe.extend(process_to_observe);
     }
 
     // ---- for each scenario ----
-    for scenario_to_run in exec_plan.scenarios_to_run {
+    for scenario_to_run in exec_plan.scenarios_to_run.iter() {
         // start the metrics loggers
         let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
         // run the scenario
-        let scenario_run = run_scenario(&cardamon_run_id, &scenario_to_run).await?;
+        let scenario_run = run_scenario(&cardamon_run_id, scenario_to_run).await?;
 
         // stop the metrics loggers
         let metrics_log = stop_handle.stop().await?;
@@ -182,7 +185,14 @@ pub async fn run<'a>(
     // stop the application
     // TODO: Implement this!
 
-    Ok(())
+    // create a summary to return to the user
+    let scenario_names = exec_plan.scenario_names();
+    let previous_runs = 3;
+    let observation_dataset = data_access_service
+        .fetch_observation_dataset(scenario_names, previous_runs)
+        .await?;
+
+    Ok(observation_dataset)
 }
 
 #[cfg(test)]
