@@ -1,6 +1,5 @@
 use cardamon::{config, data_access::LocalDataAccessService, run};
 use clap::{Parser, Subcommand};
-use tracing::{instrument::WithSubscriber, Level};
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
@@ -26,11 +25,11 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Initialize tracing
-    let level = if args.verbose {
-        Level::DEBUG
-    } else {
-        Level::TRACE
-    };
+    // let level = if args.verbose {
+    //     Level::DEBUG
+    // } else {
+    //     Level::TRACE
+    // };
     let subscriber = tracing_subscriber::fmt().finish();
     tracing::subscriber::set_global_default(subscriber)?;
 

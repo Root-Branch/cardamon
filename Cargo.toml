@@ -14,7 +14,6 @@ path = "src/server_main.rs"
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["std"] }
-async-convert = "1.0.0"
 async-trait = "0.1.80"
 axum = { version = "0.7.1", features = ["json", "macros"] }
 chrono = { version = "0.4.31", features = ["serde"] }
