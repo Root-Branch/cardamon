@@ -7,8 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - id: cargo-build
-        uses: dtolnay/rust-toolchain@stable
         run: cargo build
       - id: badge
         uses: RubbaBoy/BYOB@v1.3.0
