@@ -11,7 +11,7 @@ jobs:
       - id: cargo-build
         env:
           DATABASE_URL: "sqlite::memory:"
-        run: cargo build
+        run: cargo sqlx migrate run && cargo build
 
       - id: badge
         if: always()
