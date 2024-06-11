@@ -9,8 +9,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - id: cargo-build
+        env:
+          DATABASE_URL: "sqlite::memory:"
         run: cargo build
+
       - id: badge
+        if: always()
         uses: RubbaBoy/BYOB@v1.3.0
         with:
           NAME: build
