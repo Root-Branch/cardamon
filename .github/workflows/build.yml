@@ -16,5 +16,5 @@ jobs:
           NAME: build
           LABEL: build
           STATUS: ${{ steps.cargo-build.conclusion }}
-          COLOR: ${{ steps.cargo-build.conclusion == 'success' && red || green }}
+          COLOR: ${{ steps.cargo-build.conclusion == 'success' && 'red' || 'green' }}
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
