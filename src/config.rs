@@ -10,8 +10,8 @@ use std::{fs, io::Read};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub debug_level: String,
-    pub metrics_server_url: String,
+    pub debug_level: Option<String>,
+    pub metrics_server_url: Option<String>,
     pub processes: Vec<Process>,
     pub scenarios: Vec<Scenario>,
     pub observations: Vec<Observation>,
@@ -189,6 +189,14 @@ pub struct ExecutionPlan<'a> {
     pub processes: Vec<&'a Process>,
     pub scenarios_to_run: Vec<ScenarioToRun<'a>>,
 }
+impl<'a> ExecutionPlan<'a> {
+    pub fn scenario_names(&self) -> Vec<&str> {
+        self.scenarios_to_run
+            .iter()
+            .map(|x| x.scenario.name.as_str())
+            .collect()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -198,7 +206,7 @@ mod tests {
     #[test]
     fn can_load_config_file() -> anyhow::Result<()> {
         let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        assert_eq!(cfg.debug_level, "info");
+        assert_eq!(cfg.debug_level, Some("info".to_string()));
         Ok(())
     }
 

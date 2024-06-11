@@ -4,8 +4,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use super::DataAccess;
 use anyhow::Context;
+use async_trait::async_trait;
 use nanoid::nanoid;
 
 #[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
@@ -36,6 +36,14 @@ impl ScenarioRun {
     }
 }
 
+#[async_trait]
+pub trait ScenarioRunDao {
+    async fn fetch_last(&self, id: &str, n: u32) -> anyhow::Result<Vec<ScenarioRun>>;
+    async fn fetch(&self, name: &str) -> anyhow::Result<Option<ScenarioRun>>;
+    async fn persist(&self, model: &ScenarioRun) -> anyhow::Result<()>;
+    async fn delete(&self, id: &str) -> anyhow::Result<()>;
+}
+
 // //////////////////////////////////////
 // LocalDao
 
@@ -47,12 +55,40 @@ impl LocalDao {
         Self { pool }
     }
 }
-impl DataAccess<ScenarioRun> for LocalDao {
-    async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioRun>> {
-        sqlx::query_as!(ScenarioRun, "SELECT * FROM scenario_run WHERE id = ?1", id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("Error fetching scenario with id {id}")
+#[async_trait]
+impl ScenarioRunDao for LocalDao {
+    async fn fetch_last(&self, name: &str, n: u32) -> anyhow::Result<Vec<ScenarioRun>> {
+        sqlx::query_as!(
+            ScenarioRun,
+            r#"
+            SELECT * 
+            FROM scenario_run 
+            WHERE scenario_name = ?1 AND cardamon_run_id in (
+                SELECT cardamon_run_id 
+                FROM scenario_run 
+                WHERE scenario_name = ?1 
+                GROUP BY cardamon_run_id 
+                ORDER BY start_time ASC
+                LIMIT ?2
+            )
+            "#,
+            name,
+            n
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Error fetching scenarios")
+    }
+
+    async fn fetch(&self, name: &str) -> anyhow::Result<Option<ScenarioRun>> {
+        sqlx::query_as!(
+            ScenarioRun,
+            "SELECT * FROM scenario_run WHERE scenario_name = ?1",
+            name
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("Error fetching scenario with id {id}")
     }
 
     async fn persist(&self, scenario: &ScenarioRun) -> anyhow::Result<()> {
@@ -94,7 +130,12 @@ impl RemoteDao {
         }
     }
 }
-impl DataAccess<ScenarioRun> for RemoteDao {
+#[async_trait]
+impl ScenarioRunDao for RemoteDao {
+    async fn fetch_last(&self, _name: &str, _n: u32) -> anyhow::Result<Vec<ScenarioRun>> {
+        todo!()
+    }
+
     async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioRun>> {
         self.client
             .get(format!("{}/scenario?id={id}", self.base_url))
@@ -154,6 +195,46 @@ mod tests {
         }
 
         pool.close().await;
+        Ok(())
+    }
+
+    #[sqlx::test(
+        migrations = "./migrations",
+        fixtures("../../fixtures/scenario_runs.sql")
+    )]
+    async fn fetch_last_should_work(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
+        let scenario_service = LocalDao::new(pool.clone());
+
+        // fetch the latest scenario_1 run
+        let scenario_runs = scenario_service.fetch_last("scenario_1", 1).await?;
+
+        let cardamon_run_ids = scenario_runs
+            .iter()
+            .map(|run| run.cardamon_run_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(cardamon_run_ids, vec!["1", "1", "1"]);
+
+        let iterations = scenario_runs
+            .iter()
+            .map(|run| run.iteration)
+            .collect::<Vec<_>>();
+        assert_eq!(iterations, vec![1, 2, 3]);
+
+        // fetch the last 2 scenario_3 runs
+        let scenario_runs = scenario_service.fetch_last("scenario_3", 2).await?;
+
+        let cardamon_run_ids = scenario_runs
+            .iter()
+            .map(|run| run.cardamon_run_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(cardamon_run_ids, vec!["1", "1", "1", "2", "2", "2"]);
+
+        let iterations = scenario_runs
+            .iter()
+            .map(|run| run.iteration)
+            .collect::<Vec<_>>();
+        assert_eq!(iterations, vec![1, 2, 3, 1, 2, 3]);
+
         Ok(())
     }
 }
