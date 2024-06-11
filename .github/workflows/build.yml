@@ -1,0 +1,20 @@
+name: build
+run-name: build for commit ${{ github.head_ref }} | ${{ github.sha }}
+on: [push]
+jobs:
+  build:
+    name: cargo build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: cargo-build
+        uses: dtolnay/rust-toolchain@stable
+        run: cargo build
+      - id: badge
+        uses: RubbaBoy/BYOB@v1.3.0
+        with:
+          NAME: build
+          LABEL: build
+          STATUS: ${{ steps.cargo-build.conclusion }}
+          COLOR: ${{ steps.cargo-build.conclusion == 'success' && red || green }}
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
