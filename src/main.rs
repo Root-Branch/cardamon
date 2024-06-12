@@ -1,5 +1,6 @@
 use cardamon::{config, data_access::LocalDataAccessService, run};
 use clap::{Parser, Subcommand};
+use sqlx::{migrate::MigrateDatabase, SqlitePool};
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
@@ -36,10 +37,7 @@ async fn main() -> anyhow::Result<()> {
     match args.command {
         Commands::Run { name } => {
             // set up local data access
-            let pool = sqlx::sqlite::SqlitePoolOptions::new()
-                .max_connections(4)
-                .connect("sqlite://cardamon.db")
-                .await?;
+            let pool = create_db().await?;
             let data_access_service = LocalDataAccessService::new(pool);
 
             // create an execution plan
@@ -65,4 +63,25 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn create_db() -> anyhow::Result<SqlitePool> {
+    let db_url = "sqlite://cardamon.db";
+    if !sqlx::Sqlite::database_exists(&db_url).await? {
+        sqlx::Sqlite::create_database(&db_url).await?;
+    }
+
+    let db = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(4)
+        .connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename("cardamon.db")
+                .pragma("journal_mode", "DELETE"), // Disable WAL mode
+        )
+        // .connect(db_url) with wal and shm
+        .await?;
+
+    sqlx::migrate!().run(&db).await?;
+
+    Ok(db)
 }
