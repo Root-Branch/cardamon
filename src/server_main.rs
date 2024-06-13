@@ -1,9 +1,9 @@
 mod server;
 
-use axum::routing::{post, Router};
+use axum::routing::{get, post, Router};
 use dotenv::dotenv;
-use server::persist_metrics;
-use sqlx::sqlite::SqlitePool;
+use server::{fetch_within, persist_metrics, scenario_iteration_persist};
+use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use std::fs::File;
 use tracing::{info, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
@@ -15,13 +15,7 @@ async fn main() -> anyhow::Result<()> {
     dotenv().ok();
     let subscriber = get_subscriber("cardamon".into(), "debug".into());
     init_subscriber(subscriber);
-    let database_str = std::env::var("DATABASE_URL").expect("DATABASE_URL URL not set");
-    let pool = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_lifetime(None)
-        .idle_timeout(None)
-        .max_connections(10)
-        .connect(&database_str)
-        .await?;
+    let pool = create_db().await?;
     let app = create_app(pool).await;
     let listener = tokio::net::TcpListener::bind(format!(
         "0.0.0.0:{}",
@@ -44,6 +38,9 @@ async fn create_app(pool: SqlitePool) -> Router {
     */
     Router::new()
         .route("/cpu_metrics", post(persist_metrics))
+        .route("/cpu_metrics/:id", get(fetch_within))
+        //.route("/cpu_metrics/:id", delete(delete_metrics)) removed for now
+        .route("/scenario", post(scenario_iteration_persist))
         .with_state(pool)
 }
 
@@ -85,4 +82,24 @@ where
 fn init_subscriber(subscriber: impl Subscriber + Sync + Send) {
     LogTracer::init().expect("Failed to set logger");
     set_global_default(subscriber).expect("Failed to set subscriber");
+}
+async fn create_db() -> anyhow::Result<SqlitePool> {
+    let db_url = "sqlite://cardamon.db";
+    if !sqlx::Sqlite::database_exists(&db_url).await? {
+        sqlx::Sqlite::create_database(&db_url).await?;
+    }
+
+    let db = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(4)
+        .connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename("cardamon.db")
+                .pragma("journal_mode", "DELETE"), // Disable WAL mode
+        )
+        // .connect(db_url) with wal and shm
+        .await?;
+
+    sqlx::migrate!().run(&db).await?;
+
+    Ok(db)
 }
