@@ -6,7 +6,7 @@ pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
 use config::{ExecutionPlan, ScenarioToRun};
-use data_access::{scenario_run::ScenarioRun, DataAccessService};
+use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
 use std::time;
 use subprocess::{Exec, NullFile};
@@ -84,9 +84,9 @@ fn run_process(proc: &config::Process) -> anyhow::Result<Vec<ProcessToObserve>> 
 }
 
 async fn run_scenario<'a>(
-    cardamon_run_id: &str,
+    run_id: &str,
     scenario_to_run: &ScenarioToRun<'a>,
-) -> anyhow::Result<ScenarioRun> {
+) -> anyhow::Result<ScenarioIteration> {
     let start = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)?
         .as_millis();
@@ -116,8 +116,8 @@ async fn run_scenario<'a>(
             .duration_since(time::UNIX_EPOCH)?
             .as_millis();
 
-        let scenario_run = ScenarioRun::new(
-            cardamon_run_id,
+        let scenario_run = ScenarioIteration::new(
+            run_id,
             &scenario_to_run.scenario.name,
             scenario_to_run.iteration as i64,
             start as i64,

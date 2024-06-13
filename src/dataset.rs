@@ -1,4 +1,4 @@
-use crate::data_access::{cpu_metrics::CpuMetrics, scenario_run::ScenarioRun};
+use crate::data_access::{cpu_metrics::CpuMetrics, scenario_iteration::ScenarioIteration};
 use itertools::{Itertools, MinMaxResult};
 use std::collections::{hash_map::Entry, HashMap};
 
@@ -31,18 +31,18 @@ impl ProcessMetrics {
 /// Associates a single ScenarioRun with all the metrics captured for it.
 #[derive(Debug)]
 pub struct IterationWithMetrics {
-    scenario_run: ScenarioRun,
+    scenario_run: ScenarioIteration,
     cpu_metrics: Vec<CpuMetrics>,
 }
 impl IterationWithMetrics {
-    pub fn new(scenario_run: ScenarioRun, cpu_metrics: Vec<CpuMetrics>) -> Self {
+    pub fn new(scenario_run: ScenarioIteration, cpu_metrics: Vec<CpuMetrics>) -> Self {
         Self {
             scenario_run,
             cpu_metrics,
         }
     }
 
-    pub fn scenario_run(&self) -> &ScenarioRun {
+    pub fn scenario_run(&self) -> &ScenarioIteration {
         &self.scenario_run
     }
 
@@ -137,27 +137,26 @@ impl<'a> ScenarioDataset<'a> {
         &self.data
     }
 
-    pub fn by_cardamon_run(&'a self) -> Vec<RunDataset<'a>> {
-        let cardamon_runs = self
+    pub fn by_run(&'a self) -> Vec<RunDataset<'a>> {
+        let runs = self
             .data
             .iter()
-            .map(|x| &x.scenario_run.cardamon_run_id)
+            .map(|x| &x.scenario_run.run_id)
             .unique()
             .collect::<Vec<_>>();
 
-        cardamon_runs
-            .into_iter()
-            .map(|cardamon_run_id| {
+        runs.into_iter()
+            .map(|run_id| {
                 let data = self
                     .data
                     .iter()
-                    .filter(|x| &x.scenario_run.cardamon_run_id == cardamon_run_id)
+                    .filter(|x| &x.scenario_run.run_id == run_id)
                     .cloned()
                     .collect::<Vec<_>>();
 
                 RunDataset {
                     scenario_name: self.scenario_name,
-                    cardamon_run_id,
+                    run_id,
                     data,
                 }
             })
@@ -172,7 +171,7 @@ impl<'a> ScenarioDataset<'a> {
 #[derive(Debug)]
 pub struct RunDataset<'a> {
     scenario_name: &'a str,
-    cardamon_run_id: &'a str,
+    run_id: &'a str,
     data: Vec<&'a IterationWithMetrics>,
 }
 impl<'a> RunDataset<'a> {
@@ -180,8 +179,8 @@ impl<'a> RunDataset<'a> {
         self.scenario_name
     }
 
-    pub fn cardamon_run_id(&'a self) -> &'a str {
-        self.cardamon_run_id
+    pub fn run_id(&'a self) -> &'a str {
+        self.run_id
     }
 
     pub fn by_iterations(&'a self) -> &'a [&'a IterationWithMetrics] {
@@ -268,7 +267,7 @@ mod tests {
 
         for scenario_dataset in scenario_datasets.iter() {
             // println!("{:?}", scenario_dataset);
-            let run_datasets = scenario_dataset.by_cardamon_run();
+            let run_datasets = scenario_dataset.by_run();
             assert_eq!(run_datasets.len(), 2);
 
             for run_dataset in run_datasets.iter() {

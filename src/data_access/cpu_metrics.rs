@@ -6,12 +6,10 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use nanoid::nanoid;
 
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct CpuMetrics {
-    pub id: String,
-    pub cardamon_run_id: String,
+    pub run_id: String,
     pub process_id: String,
     pub process_name: String,
     pub cpu_usage: f64,
@@ -21,7 +19,7 @@ pub struct CpuMetrics {
 }
 impl CpuMetrics {
     pub fn new(
-        cardamon_run_id: &str,
+        run_id: &str,
         process_id: &str,
         process_name: &str,
         cpu_usage: f64,
@@ -30,8 +28,7 @@ impl CpuMetrics {
         timestamp: i64,
     ) -> Self {
         CpuMetrics {
-            id: nanoid!(5),
-            cardamon_run_id: String::from(cardamon_run_id),
+            run_id: String::from(run_id),
             process_id: String::from(process_id),
             process_name: String::from(process_name),
             cpu_usage,
@@ -46,12 +43,11 @@ impl CpuMetrics {
 pub trait CpuMetricsDao {
     async fn fetch_within(
         &self,
-        cardamon_run_id: &str,
+        run_id: &str,
         begin: i64,
         end: i64,
     ) -> anyhow::Result<Vec<CpuMetrics>>;
     async fn persist(&self, model: &CpuMetrics) -> anyhow::Result<()>;
-    async fn delete(&self, id: &str) -> anyhow::Result<()>;
 }
 
 // //////////////////////////////////////
@@ -69,23 +65,28 @@ impl LocalDao {
 impl CpuMetricsDao for LocalDao {
     async fn fetch_within(
         &self,
-        cardamon_run_id: &str,
+        run_id: &str,
         begin: i64,
         end: i64,
     ) -> anyhow::Result<Vec<CpuMetrics>> {
-        sqlx::query_as!(CpuMetrics, r#"
-            SELECT * FROM cpu_metrics WHERE cardamon_run_id = ?1 AND timestamp >= ?2 AND timestamp <= ?3
-            "#, cardamon_run_id, begin, end)
-            .fetch_all(&self.pool)
-            .await
-            .context("Error fetching cpu metrics from db.")
+        sqlx::query_as!(
+            CpuMetrics,
+            r#"
+            SELECT * FROM cpu_metrics WHERE run_id = ?1 AND timestamp >= ?2 AND timestamp <= ?3
+            "#,
+            run_id,
+            begin,
+            end
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Error fetching cpu metrics from db.")
     }
 
     async fn persist(&self, metrics: &CpuMetrics) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO cpu_metrics (id, cardamon_run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) \
-                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", 
-            metrics.id,
-            metrics.cardamon_run_id,
+        sqlx::query!("INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) \
+                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", 
+            metrics.run_id,
             metrics.process_id,
             metrics.process_name,
             metrics.cpu_usage,
@@ -97,14 +98,6 @@ impl CpuMetricsDao for LocalDao {
             .await
             .map(|_| ())
             .context("Error inserting cpu metrics into db.")
-    }
-
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        sqlx::query!("DELETE FROM cpu_metrics WHERE id = ?1", id)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .context("Error deleting cpu metrics with id {id}")
     }
 }
 
@@ -128,13 +121,13 @@ impl RemoteDao {
 impl CpuMetricsDao for RemoteDao {
     async fn fetch_within(
         &self,
-        cardamon_run_id: &str,
+        run_id: &str,
         begin: i64,
         end: i64,
     ) -> anyhow::Result<Vec<CpuMetrics>> {
         self.client
             .get(format!(
-                "{}/cpu_metrics/{cardamon_run_id}?begin={begin}&end={end}",
+                "{}/cpu_metrics/{run_id}?begin={begin}&end={end}",
                 self.base_url
             ))
             .send()
@@ -153,15 +146,6 @@ impl CpuMetricsDao for RemoteDao {
             .error_for_status()
             .map(|_| ())
             .context("Error persisting cpu metrics to remote server")
-    }
-
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        self.client
-            .delete(format!("{}/cpu_metrics/{id}", self.base_url))
-            .send()
-            .await
-            .map(|_| ())
-            .context("Error deleting cpu metrics with id {id}")
     }
 }
 

@@ -1,8 +1,8 @@
 mod server;
 
-use axum::routing::{delete, get, post, Router};
+use axum::routing::{post, Router};
 use dotenv::dotenv;
-use server::{delete_metrics, fetch_metrics, persist_metrics};
+use server::persist_metrics;
 use sqlx::sqlite::SqlitePool;
 use std::fs::File;
 use tracing::{info, subscriber::set_global_default, Subscriber};
@@ -44,8 +44,6 @@ async fn create_app(pool: SqlitePool) -> Router {
     */
     Router::new()
         .route("/cpu_metrics", post(persist_metrics))
-        .route("/cpu_metrics/:id", get(fetch_metrics))
-        .route("/cpu_metrics/:id", delete(delete_metrics))
         .with_state(pool)
 }
 
