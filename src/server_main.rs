@@ -85,8 +85,8 @@ fn init_subscriber(subscriber: impl Subscriber + Sync + Send) {
 }
 async fn create_db() -> anyhow::Result<SqlitePool> {
     let db_url = "sqlite://cardamon.db";
-    if !sqlx::Sqlite::database_exists(&db_url).await? {
-        sqlx::Sqlite::create_database(&db_url).await?;
+    if !sqlx::Sqlite::database_exists(db_url).await? {
+        sqlx::Sqlite::create_database(db_url).await?;
     }
 
     let db = sqlx::sqlite::SqlitePoolOptions::new()
