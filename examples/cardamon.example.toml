@@ -16,6 +16,7 @@ command = "yarn dev" # Required
 name = "basket_10" # Required
 desc = "Adds ten items to the basket" # Optional 
 command = "node ./scenarios/basket_10.js" # Required - commands for running scenarios
+iterations = 1 # Optional - defaults to 1
 processes = [
   "db",
   "server",
@@ -24,4 +25,3 @@ processes = [
 [[observations]]
 name = "checkout processes" # Required
 scenarios = ["basket_10"]   # Required
-iterations = 1              # Optional - defaults to 1

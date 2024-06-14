@@ -206,6 +206,7 @@ pub async fn scenario_iteration_persist(
     Ok("Scenario run persisted".to_string())
 }
 
+#[inline]
 async fn fetch_last_scenario_iteration(
     pool: &SqlitePool,
 ) -> Result<ScenarioIteration, sqlx::Error> {

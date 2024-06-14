@@ -12,13 +12,26 @@ type = "baremetal"
 name = "server"
 command = "powershell sleep 5" # "yarn dev"
 
+[[processes]]
+type = "docker"
+name = "mailgun"
+containers = ["mailgun"]
+command = "powershell sleep 5" # docker compose -f docker-compose.mailgun.yml up -d
+
 [[scenarios]]
 name = "basket_10"
 desc = "Adds ten items to the basket"
 command = "node ./scenarios/basket_10.js"
-iterations = 2
+iterations = 1
 processes = ["db", "server"]
+
+[[scenarios]]
+name = "user_signup"
+desc = "signs up 10 users"
+command = "node ./scenarios/user_signup.js"
+iterations = 1
+processes = ["db", "server", "mailgun"]
 
 [[observations]]
 name = "checkout"
-scenarios = ["basket_10"]
+scenarios = ["basket_10", "user_signup"]

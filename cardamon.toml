@@ -16,9 +16,9 @@ command = "powershell while($true) { sleep 1 }" # Required
 name = "basket_10"                    # Required
 desc = "Adds ten items to the basket" # Optional 
 command = "powershell sleep 15"       # Required - commands for running scenarios
+iterations = 1                        # Optional - defaults to 1
 processes = ["test"]                  # Required - prepend process name with `_` to ignore
 
 [[observations]]
 name = "obs_1"            # Required
 scenarios = ["basket_10"] # Required
-iterations = 1            # Optional - defaults to 1
