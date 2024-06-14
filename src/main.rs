@@ -1,6 +1,12 @@
 use cardamon::{config, data_access::LocalDataAccessService, run};
+use tracing::{subscriber::set_global_default, Subscriber};
+use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
+use tracing_log::LogTracer;
+use tracing_subscriber::{fmt::writer::MakeWriterExt, layer::SubscriberExt, EnvFilter, Registry};
+
 use clap::{Parser, Subcommand};
 use sqlx::{migrate::MigrateDatabase, SqlitePool};
+use std::fs::File;
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
@@ -25,23 +31,18 @@ async fn main() -> anyhow::Result<()> {
     // Parse clap args
     let args = Cli::parse();
 
-    // Initialize tracing
-    // let level = if args.verbose {
-    //     Level::DEBUG
-    // } else {
-    //     Level::TRACE
-    // };
-    let subscriber = tracing_subscriber::fmt().finish();
-    tracing::subscriber::set_global_default(subscriber)?;
-
     match args.command {
         Commands::Run { name } => {
             // set up local data access
             let pool = create_db().await?;
             let data_access_service = LocalDataAccessService::new(pool);
 
-            // create an execution plan
             let config = config::Config::from_path(std::path::Path::new("./cardamon.toml"))?;
+            init_subscriber(get_subscriber(
+                "cardamon".into(),
+                config.debug_level.clone().unwrap_or("info".to_string()),
+            ));
+            // create an execution plan
             let execution_plan = config.create_execution_plan(&name)?;
 
             // run it!
@@ -84,4 +85,21 @@ async fn create_db() -> anyhow::Result<SqlitePool> {
     sqlx::migrate!().run(&db).await?;
 
     Ok(db)
+}
+fn get_subscriber(name: String, env_filter: String) -> impl Subscriber + Sync + Send {
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter));
+
+    let file_writer = File::create("debug.log").unwrap();
+    let stdout_writer = std::io::stdout;
+    let formatting_layer = BunyanFormattingLayer::new(name, file_writer.and(stdout_writer));
+
+    Registry::default()
+        .with(env_filter)
+        .with(JsonStorageLayer)
+        .with(formatting_layer)
+}
+fn init_subscriber(subscriber: impl Subscriber + Sync + Send) {
+    LogTracer::init().expect("Failed to set logger");
+    set_global_default(subscriber).expect("Failed to set subscriber");
 }
