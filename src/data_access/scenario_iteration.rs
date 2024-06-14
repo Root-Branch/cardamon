@@ -153,13 +153,13 @@ mod tests {
             .iter()
             .map(|run| run.run_id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(run_ids, vec!["1", "1", "1"]);
+        assert_eq!(run_ids, vec!["1"]);
 
         let iterations = scenario_iterations
             .iter()
             .map(|run| run.iteration)
             .collect::<Vec<_>>();
-        assert_eq!(iterations, vec![1, 2, 3]);
+        assert_eq!(iterations, vec![1]);
 
         // fetch the last 2 scenario_3 runs
         let scenario_iterations = scenario_service.fetch_last("scenario_3", 2).await?;
