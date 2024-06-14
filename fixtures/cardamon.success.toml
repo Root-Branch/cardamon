@@ -16,9 +16,9 @@ command = "powershell sleep 5" # "yarn dev"
 name = "basket_10"
 desc = "Adds ten items to the basket"
 command = "node ./scenarios/basket_10.js"
+processes = ["db", "server"]
 
 [[observations]]
 name = "checkout"
-processes = ["db", "server"]
 scenarios = ["basket_10"]
 iterations = 1
