@@ -51,8 +51,8 @@ async fn main() -> anyhow::Result<()> {
                 println!("Scenario: {:?}", scenario_dataset.scenario_name());
                 println!("--------------------------------");
 
-                for run_dataset in scenario_dataset.by_cardamon_run().iter() {
-                    println!("Run: {:?}", run_dataset.cardamon_run_id());
+                for run_dataset in scenario_dataset.by_run().iter() {
+                    println!("Run: {:?}", run_dataset.run_id());
 
                     for avged_dataset in run_dataset.averaged().iter() {
                         println!("\t{:?}", avged_dataset);
@@ -67,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
 
 async fn create_db() -> anyhow::Result<SqlitePool> {
     let db_url = "sqlite://cardamon.db";
-    if !sqlx::Sqlite::database_exists(&db_url).await? {
-        sqlx::Sqlite::create_database(&db_url).await?;
+    if !sqlx::Sqlite::database_exists(db_url).await? {
+        sqlx::Sqlite::create_database(db_url).await?;
     }
 
     let db = sqlx::sqlite::SqlitePoolOptions::new()
