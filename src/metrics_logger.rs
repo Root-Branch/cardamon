@@ -120,51 +120,6 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
     }
 
     Ok(StopHandle::new(token, join_set, shared_metrics_log))
-
-    // run the scenario
-    // match scenario_runner::run_scenario(scenario_to_run).await {
-    //     Ok(_) => {
-    //         tracing::info!("Scenario completed successfully");
-    //
-    //         // cancel loggers
-    //         token.cancel();
-    //         loop {
-    //             if join_set.join_next().await.is_none() {
-    //                 break;
-    //             }
-    //         }
-    //
-    //         // take ownership of metrics log
-    //         let metrics_log = Arc::try_unwrap(shared_metrics_log)
-    //             .expect("Mutex guarding metrics_log shouldn't have multiple owners!")
-    //             .into_inner()
-    //             .expect("Should be able to take ownership of metrics_log");
-    //
-    //         // return error if metrics log contains any errors
-    //         if metrics_log.has_errors() {
-    //             return Err(anyhow::anyhow!(
-    //                 "Metrics log contains errors, please check trace"
-    //             ));
-    //         }
-    //
-    //         // TODO: Save scenario
-    //
-    //         // TODO: Save metrics log
-    //
-    //         Ok(metrics_log)
-    //     }
-    //     Err(e) => {
-    //         // cancel loggers
-    //         token.cancel();
-    //         loop {
-    //             if join_set.join_next().await.is_none() {
-    //                 break;
-    //             }
-    //         }
-    //
-    //         Err(anyhow::anyhow!("Scenario contains errors.\n{e}"))
-    //     }
-    // }
 }
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is

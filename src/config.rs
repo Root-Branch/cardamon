@@ -89,7 +89,7 @@ impl Config {
                 .context("")?;
 
             for i in 0..observation.iterations {
-                let scenario_to_run = ScenarioToRun::new(scenario, i);
+                let scenario_to_run = ScenarioToExecute::new(scenario, i);
                 scenarios_to_run.push(scenario_to_run);
             }
         }
@@ -171,11 +171,11 @@ pub struct Observation {
 }
 
 #[derive(Debug)]
-pub struct ScenarioToRun<'a> {
+pub struct ScenarioToExecute<'a> {
     pub scenario: &'a Scenario,
     pub iteration: u32,
 }
-impl<'a> ScenarioToRun<'a> {
+impl<'a> ScenarioToExecute<'a> {
     fn new(scenario: &'a Scenario, iteration: u32) -> Self {
         Self {
             scenario,
@@ -187,7 +187,7 @@ impl<'a> ScenarioToRun<'a> {
 #[derive(Debug)]
 pub struct ExecutionPlan<'a> {
     pub processes: Vec<&'a Process>,
-    pub scenarios_to_run: Vec<ScenarioToRun<'a>>,
+    pub scenarios_to_run: Vec<ScenarioToExecute<'a>>,
 }
 impl<'a> ExecutionPlan<'a> {
     pub fn scenario_names(&self) -> Vec<&str> {

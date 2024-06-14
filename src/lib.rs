@@ -5,7 +5,7 @@ pub mod metrics;
 pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
-use config::{ExecutionPlan, ScenarioToRun};
+use config::{ExecutionPlan, ScenarioToExecute};
 use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
 use std::time;
@@ -85,7 +85,7 @@ fn run_process(proc: &config::Process) -> anyhow::Result<Vec<ProcessToObserve>> 
 
 async fn run_scenario<'a>(
     run_id: &str,
-    scenario_to_run: &ScenarioToRun<'a>,
+    scenario_to_run: &ScenarioToExecute<'a>,
 ) -> anyhow::Result<ScenarioIteration> {
     let start = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)?
@@ -116,14 +116,14 @@ async fn run_scenario<'a>(
             .duration_since(time::UNIX_EPOCH)?
             .as_millis();
 
-        let scenario_run = ScenarioIteration::new(
+        let scenario_iteration = ScenarioIteration::new(
             run_id,
             &scenario_to_run.scenario.name,
             scenario_to_run.iteration as i64,
             start as i64,
             stop as i64,
         );
-        Ok(scenario_run)
+        Ok(scenario_iteration)
     } else {
         let error_message = String::from_utf8_lossy(&output.stderr).to_string();
         Err(anyhow::anyhow!(
@@ -138,7 +138,7 @@ pub async fn run<'a>(
     data_access_service: &dyn DataAccessService,
 ) -> anyhow::Result<ObservationDataset> {
     // create a unique cardamon run id
-    let cardamon_run_id = nanoid::nanoid!(5);
+    let run_id = nanoid::nanoid!(5);
 
     // run the application
     let mut processes_to_observe = vec![];
@@ -153,7 +153,7 @@ pub async fn run<'a>(
         let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
         // run the scenario
-        let scenario_run = run_scenario(&cardamon_run_id, scenario_to_run).await?;
+        let scenario_iteration = run_scenario(&run_id, scenario_to_run).await?;
 
         // stop the metrics loggers
         let metrics_log = stop_handle.stop().await?;
@@ -169,14 +169,14 @@ pub async fn run<'a>(
 
         // write scenario and metrics to db
         data_access_service
-            .scenario_run_dao()
-            .persist(&scenario_run)
+            .scenario_iteration_dao()
+            .persist(&scenario_iteration)
             .await?;
 
         for metrics in metrics_log.get_metrics() {
             data_access_service
                 .cpu_metrics_dao()
-                .persist(&metrics.into_data_access(&cardamon_run_id))
+                .persist(&metrics.into_data_access(&run_id))
                 .await?;
         }
     }

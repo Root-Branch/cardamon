@@ -28,22 +28,22 @@ impl ProcessMetrics {
     }
 }
 
-/// Associates a single ScenarioRun with all the metrics captured for it.
+/// Associates a single ScenarioIteration with all the metrics captured for it.
 #[derive(Debug)]
 pub struct IterationWithMetrics {
-    scenario_run: ScenarioIteration,
+    scenario_iteration: ScenarioIteration,
     cpu_metrics: Vec<CpuMetrics>,
 }
 impl IterationWithMetrics {
-    pub fn new(scenario_run: ScenarioIteration, cpu_metrics: Vec<CpuMetrics>) -> Self {
+    pub fn new(scenario_it: ScenarioIteration, cpu_metrics: Vec<CpuMetrics>) -> Self {
         Self {
-            scenario_run,
+            scenario_iteration: scenario_it,
             cpu_metrics,
         }
     }
 
-    pub fn scenario_run(&self) -> &ScenarioIteration {
-        &self.scenario_run
+    pub fn scenario_iteration(&self) -> &ScenarioIteration {
+        &self.scenario_iteration
     }
 
     pub fn cpu_metrics(&self) -> &[CpuMetrics] {
@@ -97,7 +97,7 @@ impl<'a> ObservationDataset {
         let scenario_names = self
             .data
             .iter()
-            .map(|x| &x.scenario_run.scenario_name)
+            .map(|x| &x.scenario_iteration.scenario_name)
             .unique()
             .collect::<Vec<_>>();
 
@@ -107,7 +107,7 @@ impl<'a> ObservationDataset {
                 let data = self
                     .data
                     .iter()
-                    .filter(|x| &x.scenario_run.scenario_name == scenario_name)
+                    .filter(|x| &x.scenario_iteration.scenario_name == scenario_name)
                     .collect::<Vec<_>>();
 
                 ScenarioDataset {
@@ -141,7 +141,7 @@ impl<'a> ScenarioDataset<'a> {
         let runs = self
             .data
             .iter()
-            .map(|x| &x.scenario_run.run_id)
+            .map(|x| &x.scenario_iteration.run_id)
             .unique()
             .collect::<Vec<_>>();
 
@@ -150,7 +150,7 @@ impl<'a> ScenarioDataset<'a> {
                 let data = self
                     .data
                     .iter()
-                    .filter(|x| &x.scenario_run.run_id == run_id)
+                    .filter(|x| &x.scenario_iteration.run_id == run_id)
                     .cloned()
                     .collect::<Vec<_>>();
 
@@ -252,7 +252,7 @@ mod tests {
 
     #[sqlx::test(
         migrations = "./migrations",
-        fixtures("../fixtures/scenario_runs.sql", "../fixtures/cpu_metrics.sql")
+        fixtures("../fixtures/scenario_iterations.sql", "../fixtures/cpu_metrics.sql")
     )]
     async fn datasets_work(pool: SqlitePool) -> anyhow::Result<()> {
         let data_access_service = LocalDataAccessService::new(pool.clone());

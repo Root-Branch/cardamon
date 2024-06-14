@@ -141,36 +141,36 @@ mod tests {
 
     #[sqlx::test(
         migrations = "./migrations",
-        fixtures("../../fixtures/scenario_runs.sql")
+        fixtures("../../fixtures/scenario_iterations.sql")
     )]
     async fn fetch_last_should_work(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         let scenario_service = LocalDao::new(pool.clone());
 
         // fetch the latest scenario_1 run
-        let scenario_runs = scenario_service.fetch_last("scenario_1", 1).await?;
+        let scenario_iterations = scenario_service.fetch_last("scenario_1", 1).await?;
 
-        let cardamon_run_ids = scenario_runs
+        let run_ids = scenario_iterations
             .iter()
             .map(|run| run.run_id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(cardamon_run_ids, vec!["1", "1", "1"]);
+        assert_eq!(run_ids, vec!["1", "1", "1"]);
 
-        let iterations = scenario_runs
+        let iterations = scenario_iterations
             .iter()
             .map(|run| run.iteration)
             .collect::<Vec<_>>();
         assert_eq!(iterations, vec![1, 2, 3]);
 
         // fetch the last 2 scenario_3 runs
-        let scenario_runs = scenario_service.fetch_last("scenario_3", 2).await?;
+        let scenario_iterations = scenario_service.fetch_last("scenario_3", 2).await?;
 
-        let cardamon_run_ids = scenario_runs
+        let run_ids = scenario_iterations
             .iter()
             .map(|run| run.run_id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(cardamon_run_ids, vec!["1", "1", "1", "2", "2", "2"]);
+        assert_eq!(run_ids, vec!["1", "1", "1", "2", "2", "2"]);
 
-        let iterations = scenario_runs
+        let iterations = scenario_iterations
             .iter()
             .map(|run| run.iteration)
             .collect::<Vec<_>>();
