@@ -12,6 +12,8 @@
 *.db-shm
 *.db-wal
 
+flake.nix
+flake.lock
 ### dotenv ###
 .env
 
