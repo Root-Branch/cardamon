@@ -13,15 +13,15 @@ name = "server"      # Required
 command = "yarn dev" # Required
 
 [[scenarios]]
-name = "basket_10"                        # Required
-desc = "Adds ten items to the basket"     # Optional 
+name = "basket_10" # Required
+desc = "Adds ten items to the basket" # Optional 
 command = "node ./scenarios/basket_10.js" # Required - commands for running scenarios
-
-[[observations]]
-name = "checkout processes" # Required
+iterations = 1 # Optional - defaults to 1
 processes = [
   "db",
   "server",
 ] # Required - prepend process name with `_` to ignore
-scenarios = ["basket_10"] # Required
-iterations = 1 # Optional - defaults to 1
+
+[[observations]]
+name = "checkout processes" # Required
+scenarios = ["basket_10"]   # Required

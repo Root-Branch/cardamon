@@ -85,14 +85,14 @@ fn run_process(proc: &config::Process) -> anyhow::Result<Vec<ProcessToObserve>> 
 
 async fn run_scenario<'a>(
     run_id: &str,
-    scenario_to_run: &ScenarioToExecute<'a>,
+    scenario_to_execute: &ScenarioToExecute<'a>,
 ) -> anyhow::Result<ScenarioIteration> {
     let start = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)?
         .as_millis();
 
     // Split the scenario_command into a vector
-    let command_parts: Vec<&str> = scenario_to_run
+    let command_parts: Vec<&str> = scenario_to_execute
         .scenario
         .command
         .split_whitespace()
@@ -118,8 +118,8 @@ async fn run_scenario<'a>(
 
         let scenario_iteration = ScenarioIteration::new(
             run_id,
-            &scenario_to_run.scenario.name,
-            scenario_to_run.iteration as i64,
+            &scenario_to_execute.scenario.name,
+            scenario_to_execute.iteration as i64,
             start as i64,
             stop as i64,
         );
@@ -148,12 +148,12 @@ pub async fn run<'a>(
     }
 
     // ---- for each scenario ----
-    for scenario_to_run in exec_plan.scenarios_to_run.iter() {
+    for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
         // start the metrics loggers
         let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
         // run the scenario
-        let scenario_iteration = run_scenario(&run_id, scenario_to_run).await?;
+        let scenario_iteration = run_scenario(&run_id, scenario_to_execute).await?;
 
         // stop the metrics loggers
         let metrics_log = stop_handle.stop().await?;

@@ -24,119 +24,99 @@ impl Config {
         toml::from_str::<Config>(&config_str).context("Error parsing config file.")
     }
 
-    fn get_observation(&self, observation_name: &str) -> anyhow::Result<&Observation> {
+    fn find_observation(&self, observation_name: &str) -> Option<&Observation> {
         self.observations
             .iter()
             .find(|obs| obs.name == observation_name)
-            .context("Observation with name {name} does not exist.")
     }
 
-    // /// Returns a vector of ScenarioToRun for the given observation
-    // fn scenarios_to_run(&self, observation: &Observation) -> anyhow::Result<Vec<ScenarioToRun>> {
-    //     let missing_scenarios = observation
-    //         .scenarios
-    //         .iter()
-    //         .filter(|scenario_name| {
-    //             !self
-    //                 .scenarios
-    //                 .iter()
-    //                 .any(|scenario| &&scenario.name == scenario_name)
-    //         })
-    //         .collect::<Vec<_>>();
-    //     if !missing_scenarios.is_empty() {
-    //         let mut err_str = String::new();
-    //         for missing_scenario in missing_scenarios {
-    //             err_str.push_str(missing_scenario);
-    //         }
-    //         return Err(anyhow::anyhow!("scenarios are missing: [{err_str}]"));
-    //     }
-    //
-    //     // find all the scenarios listed in the observation
-    //     let obs_scenarios = self
-    //         .scenarios
-    //         .iter()
-    //         .filter(|s| observation.scenarios.contains(&s.name))
-    //         .collect::<Vec<_>>();
-    //
-    //     // create a vector of ScenarioToRun for each iteration
-    //     let mut scenarios_to_run = vec![];
-    //     for scenario in obs_scenarios {
-    //         for iteration in 0..observation.iterations {
-    //             let scenario_to_run = ScenarioToRun {
-    //                 name: scenario.name.clone(),
-    //                 command: scenario.command.clone(),
-    //                 iteration,
-    //             };
-    //             scenarios_to_run.push(scenario_to_run);
-    //         }
-    //     }
-    //
-    //     Ok(scenarios_to_run)
-    // }
+    fn find_scenario(&self, scenario_name: &str) -> Option<&Scenario> {
+        self.scenarios
+            .iter()
+            .find(|scenario| scenario.name == scenario_name)
+    }
 
-    pub fn create_execution_plan(&self, observation_name: &str) -> anyhow::Result<ExecutionPlan> {
-        let observation = self.get_observation(observation_name)?;
+    /// Finds a process in the config with the given name.
+    ///
+    /// # Arguments
+    /// * proc_name - the name of the process to find
+    ///
+    /// # Returns
+    /// Some process if it can be found, None otherwise
+    fn find_process(&self, proc_name: &str) -> Option<&Process> {
+        self.processes.iter().find(|proc| match proc {
+            Process::BareMetal { name, command: _ } => name == proc_name,
+            Process::Docker {
+                name,
+                containers: _,
+                command: _,
+            } => name == proc_name,
+        })
+    }
 
-        // create a vector of scenarios to run for the given observation
-        // let scenarios_to_run = self.scenarios_to_run(observation)?;
-
-        let mut scenarios_to_run = vec![];
-        for scenario_name in observation.scenarios.iter() {
-            let scenario = self
-                .scenarios
-                .iter()
-                .find(|scenario| &scenario.name == scenario_name)
-                .context("")?;
-
-            for i in 0..observation.iterations {
-                let scenario_to_run = ScenarioToExecute::new(scenario, i);
-                scenarios_to_run.push(scenario_to_run);
-            }
+    /// Finds the intersection of processes across all the given scenarios.
+    ///
+    /// # Arguments
+    ///
+    /// * scenarios_to_execute - the scenarios which are going to be executed.
+    ///
+    /// # Returns
+    ///
+    /// A vector containing the intersection of processes required to run all the scenarios in the
+    /// observation.
+    fn collect_processes(
+        &self,
+        scenarios_to_execute: &[ScenarioToExecute],
+    ) -> anyhow::Result<Vec<&Process>> {
+        let mut proc_set = std::collections::hash_set::HashSet::new();
+        for scenario_to_exec in scenarios_to_execute.iter() {
+            proc_set.extend(scenario_to_exec.scenario.processes.iter());
         }
 
-        // // launch the application processes returning a vector of ProcessToObserve
-        // let mut processes_to_observe = vec![];
-        // for proc_name in observation.processes.iter() {
-        //     let proc = self
-        //         .processes
-        //         .iter()
-        //         .find(|proc| match proc {
-        //             Process::BareMetal { name, command: _ } => name == proc_name,
-        //             Process::Docker {
-        //                 name,
-        //                 containers: _,
-        //                 command: _,
-        //             } => name == proc_name,
-        //         })
-        //         .context("Observation references process that doesn't exist")?;
-        //
-        //     let mut procs_to_obs = app_runner::run_process(proc)?;
-        //     processes_to_observe.append(&mut procs_to_obs);
-        // }
-
-        // create a vector of processes
         let mut processes = vec![];
-        for proc_name in observation.processes.iter() {
+        for proc_name in proc_set {
             let proc = self
-                .processes
-                .iter()
-                .find(|proc| match proc {
-                    Process::BareMetal { name, command: _ } => name == proc_name,
-                    Process::Docker {
-                        name,
-                        containers: _,
-                        command: _,
-                    } => name == proc_name,
-                })
-                .context("")?;
-
+                .find_process(proc_name)
+                .context(format!("Unable to find process with name: {proc_name}"))?;
             processes.push(proc);
         }
+
+        Ok(processes)
+    }
+
+    pub fn create_execution_plan(&self, name: &str) -> anyhow::Result<ExecutionPlan> {
+        let mut scenarios = vec![];
+
+        let obs = self.find_observation(name);
+        if let Some(obs) = obs {
+            // if there is an observation with the given name then get all the scenarios associated
+            // with that observation.
+            for scenario_name in obs.scenarios.iter() {
+                let scenario = self.find_scenario(scenario_name).context(format!(
+                    "Unable to find scenario with name: {scenario_name}"
+                ))?;
+                scenarios.push(scenario);
+            }
+        } else {
+            // if there isn't an observation with the given name then try to find a single scenario
+            // with the name instead.
+            let scenario = self.find_scenario(name).context(format!(
+                "Unable to find observation or scenario with name: {name}"
+            ))?;
+            scenarios.push(scenario);
+        }
+
+        let mut scenarios_to_execute = vec![];
+        for scenario in scenarios {
+            scenarios_to_execute.append(&mut scenario.build_scenarios_to_execute());
+        }
+
+        let processes = self.collect_processes(&scenarios_to_execute)?;
 
         // return a new Run
         Ok(ExecutionPlan {
             processes,
-            scenarios_to_run,
+            scenarios_to_execute,
         })
     }
 }
@@ -146,6 +126,18 @@ pub struct Scenario {
     pub name: String,
     pub desc: String,
     pub command: String,
+    pub iterations: u32,
+    pub processes: Vec<String>,
+}
+impl Scenario {
+    fn build_scenarios_to_execute(&self) -> Vec<ScenarioToExecute> {
+        let mut scenarios_to_execute = vec![];
+        for i in 0..self.iterations {
+            let scenario_to_exec = ScenarioToExecute::new(self, i);
+            scenarios_to_execute.push(scenario_to_exec);
+        }
+        scenarios_to_execute
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -165,8 +157,6 @@ pub enum Process {
 #[derive(Debug, Deserialize)]
 pub struct Observation {
     pub name: String,
-    pub iterations: u32,
-    pub processes: Vec<String>,
     pub scenarios: Vec<String>,
 }
 
@@ -187,11 +177,11 @@ impl<'a> ScenarioToExecute<'a> {
 #[derive(Debug)]
 pub struct ExecutionPlan<'a> {
     pub processes: Vec<&'a Process>,
-    pub scenarios_to_run: Vec<ScenarioToExecute<'a>>,
+    pub scenarios_to_execute: Vec<ScenarioToExecute<'a>>,
 }
 impl<'a> ExecutionPlan<'a> {
     pub fn scenario_names(&self) -> Vec<&str> {
-        self.scenarios_to_run
+        self.scenarios_to_execute
             .iter()
             .map(|x| x.scenario.name.as_str())
             .collect()
@@ -200,6 +190,8 @@ impl<'a> ExecutionPlan<'a> {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
     use std::path::Path;
 
@@ -213,8 +205,145 @@ mod tests {
     #[test]
     fn can_find_observation_by_name() -> anyhow::Result<()> {
         let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        let observation = cfg.get_observation("checkout");
-        assert!(observation.is_ok());
+        let observation = cfg.find_observation("checkout");
+        assert!(observation.is_some());
+
+        let observation = cfg.find_observation("nope");
+        assert!(observation.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn can_find_scenario_by_name() -> anyhow::Result<()> {
+        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+        let scenario = cfg.find_scenario("user_signup");
+        assert!(scenario.is_some());
+
+        let scenario = cfg.find_scenario("nope");
+        assert!(scenario.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn can_find_process_by_name() -> anyhow::Result<()> {
+        let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
+        let process = cfg.find_process("server");
+        assert!(process.is_some());
+
+        let process = cfg.find_process("nope");
+        assert!(process.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn collecting_processes_works() -> anyhow::Result<()> {
+        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+        let scenario1 = cfg
+            .find_scenario("user_signup")
+            .unwrap()
+            .build_scenarios_to_execute();
+        let scenario2 = cfg
+            .find_scenario("basket_10")
+            .unwrap()
+            .build_scenarios_to_execute();
+
+        let scenarios_to_execute = vec![scenario1, scenario2]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        let process_names = cfg
+            .collect_processes(&scenarios_to_execute)?
+            .into_iter()
+            .map(|proc| match proc {
+                Process::BareMetal { name, command: _ } => name.as_str(),
+                Process::Docker {
+                    name,
+                    containers: _,
+                    command: _,
+                } => name.as_str(),
+            })
+            .sorted()
+            .collect::<Vec<_>>();
+
+        assert_eq!(process_names, ["db", "mailgun", "server"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
+        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
+        let scenario = cfg
+            .find_scenario("basket_10")
+            .expect("scenario 'basket_10' should exist!");
+        let scenarios_to_execute = scenario.build_scenarios_to_execute();
+        assert_eq!(scenarios_to_execute.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn can_create_exec_plan_for_observation() -> anyhow::Result<()> {
+        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+
+        let exec_plan = cfg.create_execution_plan("checkout")?;
+        let scenario_names: Vec<&str> = exec_plan
+            .scenarios_to_execute
+            .iter()
+            .map(|s| s.scenario.name.as_str())
+            .sorted()
+            .collect();
+        let process_names: Vec<&str> = exec_plan
+            .processes
+            .into_iter()
+            .map(|proc| match proc {
+                Process::Docker {
+                    name,
+                    containers: _,
+                    command: _,
+                } => name.as_str(),
+                Process::BareMetal { name, command: _ } => name.as_str(),
+            })
+            .sorted()
+            .collect();
+
+        assert_eq!(scenario_names, ["basket_10", "user_signup"]);
+        assert_eq!(process_names, ["db", "mailgun", "server"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn can_create_exec_plan_for_scenario() -> anyhow::Result<()> {
+        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+
+        let exec_plan = cfg.create_execution_plan("basket_10")?;
+        let scenario_names: Vec<&str> = exec_plan
+            .scenarios_to_execute
+            .iter()
+            .map(|s| s.scenario.name.as_str())
+            .sorted()
+            .collect();
+        let process_names: Vec<&str> = exec_plan
+            .processes
+            .into_iter()
+            .map(|proc| match proc {
+                Process::Docker {
+                    name,
+                    containers: _,
+                    command: _,
+                } => name.as_str(),
+                Process::BareMetal { name, command: _ } => name.as_str(),
+            })
+            .sorted()
+            .collect();
+
+        assert_eq!(scenario_names, ["basket_10"]);
+        assert_eq!(process_names, ["db", "server"]);
+
         Ok(())
     }
 
@@ -248,15 +377,6 @@ mod tests {
     //         }
     //         _ => panic!(),
     //     }
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn multiple_iterations_should_create_more_scenarios_to_run() -> anyhow::Result<()> {
-    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
-    //     let obs = cfg.get_observation("checkout")?;
-    //     let scenarios_to_run = cfg.scenarios_to_run(obs)?;
-    //     assert_eq!(scenarios_to_run.len(), 2);
     //     Ok(())
     // }
 
