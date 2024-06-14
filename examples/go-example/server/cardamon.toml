@@ -1,0 +1,17 @@
+debug_level = "debug" # Optional - defaults to "info"
+[[processes]]
+type = "docker"
+name = "redis_and_server"                                      # Required
+command = "docker compose up --build" # Required
+containers = ["server-redis-1","server-server-1"]
+
+[[scenarios]]
+name = "golang_sign_in"                    # Required
+desc = "Send sign in request to server" # Optional 
+command = "go run ../client/client.go"       # Required - commands for running scenarios
+
+[[observations]]
+name = "login"            # Required
+processes = ["redis_and_server"]      # Required - prepend process name with `_` to ignore
+scenarios = ["golang_sign_in"] # Required
+iterations = 1            # Optional - defaults to 1
