@@ -4,14 +4,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use super::DataAccess;
 use anyhow::Context;
-use nanoid::nanoid;
+use async_trait::async_trait;
 
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct CpuMetrics {
-    pub id: String,
-    pub cardamon_run_id: String,
+    pub run_id: String,
     pub process_id: String,
     pub process_name: String,
     pub cpu_usage: f64,
@@ -21,7 +19,7 @@ pub struct CpuMetrics {
 }
 impl CpuMetrics {
     pub fn new(
-        cardamon_run_id: &str,
+        run_id: &str,
         process_id: &str,
         process_name: &str,
         cpu_usage: f64,
@@ -30,8 +28,7 @@ impl CpuMetrics {
         timestamp: i64,
     ) -> Self {
         CpuMetrics {
-            id: nanoid!(5),
-            cardamon_run_id: String::from(cardamon_run_id),
+            run_id: String::from(run_id),
             process_id: String::from(process_id),
             process_name: String::from(process_name),
             cpu_usage,
@@ -40,6 +37,17 @@ impl CpuMetrics {
             timestamp,
         }
     }
+}
+
+#[async_trait]
+pub trait CpuMetricsDao {
+    async fn fetch_within(
+        &self,
+        run_id: &str,
+        begin: i64,
+        end: i64,
+    ) -> anyhow::Result<Vec<CpuMetrics>>;
+    async fn persist(&self, model: &CpuMetrics) -> anyhow::Result<()>;
 }
 
 // //////////////////////////////////////
@@ -53,19 +61,32 @@ impl LocalDao {
         Self { pool }
     }
 }
-impl DataAccess<CpuMetrics> for LocalDao {
-    async fn fetch(&self, id: &str) -> anyhow::Result<Option<CpuMetrics>> {
-        sqlx::query_as!(CpuMetrics, "SELECT * FROM cpu_metrics WHERE id = ?1", id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("Error fetching cpu metrics from db.")
+#[async_trait]
+impl CpuMetricsDao for LocalDao {
+    async fn fetch_within(
+        &self,
+        run_id: &str,
+        begin: i64,
+        end: i64,
+    ) -> anyhow::Result<Vec<CpuMetrics>> {
+        sqlx::query_as!(
+            CpuMetrics,
+            r#"
+            SELECT * FROM cpu_metrics WHERE run_id = ?1 AND timestamp >= ?2 AND timestamp <= ?3
+            "#,
+            run_id,
+            begin,
+            end
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Error fetching cpu metrics from db.")
     }
 
     async fn persist(&self, metrics: &CpuMetrics) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO cpu_metrics (id, cardamon_run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) \
-                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)", 
-            metrics.id,
-            metrics.cardamon_run_id,
+        sqlx::query!("INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) \
+                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", 
+            metrics.run_id,
             metrics.process_id,
             metrics.process_name,
             metrics.cpu_usage,
@@ -77,14 +98,6 @@ impl DataAccess<CpuMetrics> for LocalDao {
             .await
             .map(|_| ())
             .context("Error inserting cpu metrics into db.")
-    }
-
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        sqlx::query!("DELETE FROM cpu_metrics WHERE id = ?1", id)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .context("Error deleting cpu metrics with id {id}")
     }
 }
 
@@ -104,13 +117,22 @@ impl RemoteDao {
         }
     }
 }
-impl DataAccess<CpuMetrics> for RemoteDao {
-    async fn fetch(&self, id: &str) -> anyhow::Result<Option<CpuMetrics>> {
+#[async_trait]
+impl CpuMetricsDao for RemoteDao {
+    async fn fetch_within(
+        &self,
+        run_id: &str,
+        begin: i64,
+        end: i64,
+    ) -> anyhow::Result<Vec<CpuMetrics>> {
         self.client
-            .get(format!("{}/cpu_metrics/{id}", self.base_url))
+            .get(format!(
+                "{}/cpu_metrics/{run_id}?begin={begin}&end={end}",
+                self.base_url
+            ))
             .send()
             .await?
-            .json::<Option<CpuMetrics>>()
+            .json::<Vec<CpuMetrics>>()
             .await
             .context("Error fetching cpu metrics with id {id} from remote server")
     }
@@ -125,48 +147,39 @@ impl DataAccess<CpuMetrics> for RemoteDao {
             .map(|_| ())
             .context("Error persisting cpu metrics to remote server")
     }
-
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        self.client
-            .delete(format!("{}/cpu_metrics/{id}", self.base_url))
-            .send()
-            .await
-            .map(|_| ())
-            .context("Error deleting cpu metrics with id {id}")
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
-    use core::panic;
-    use std::time;
 
-    #[sqlx::test(migrations = "./migrations")]
-    async fn test_local_cpu_metrics_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
+    #[sqlx::test(
+        migrations = "./migrations",
+        fixtures("../../fixtures/cpu_metrics.sql")
+    )]
+    async fn local_cpu_metrics_fetch_within(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         let metrics_service = LocalDao::new(pool.clone());
-        let now = time::SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)?
-            .as_millis() as i64;
 
-        let metrics = CpuMetrics::new("1", "1", "test_process", 200_f64, 100_f64, 4, now);
-        metrics_service.persist(&metrics).await?;
+        let metrics = metrics_service
+            .fetch_within("1", 1717507600000, 1717507600200)
+            .await?;
 
-        match metrics_service.fetch(&metrics.id).await? {
-            Some(fetched) => assert_eq!(fetched, metrics),
-            None => panic!("metrics not found!"),
-        }
+        assert_eq!(metrics.len(), 4);
 
-        metrics_service.delete(&metrics.id).await?;
+        let process_names: Vec<&str> = metrics
+            .iter()
+            .map(|metric| metric.process_name.as_str())
+            .unique()
+            .collect();
 
-        if metrics_service.fetch(&metrics.id).await?.is_some() {
-            panic!("metrics should not exist after delete!");
-        }
+        assert_eq!(process_names, vec!["yarn", "docker"]);
 
         pool.close().await;
         Ok(())
     }
-/*
+    /*
     #[sqlx::test(migrations = "./migrations")]
     async fn test_remote_cpu_metrics_service(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         let metrics_service = RemoteDao::new("http://127.0.0.1:4001");

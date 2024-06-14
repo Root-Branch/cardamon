@@ -1,23 +1,33 @@
 mod errors;
+use chrono::Utc;
 
 use axum::{
-    extract::{Path, State},
-    response::IntoResponse,
+    extract::{Path, Query, State},
     Json,
 };
-use cardamon::data_access::cpu_metrics::CpuMetrics;
+use cardamon::data_access::{cpu_metrics::CpuMetrics, scenario_iteration::ScenarioIteration};
 use errors::ServerError;
+use serde::Deserialize;
 use sqlx::SqlitePool;
 use tracing::instrument;
 
 // Must receive data from src/data_access/cpu_metrics.rs in this format:
 /*
-   async fn fetch(&self, id: &str) -> anyhow::Result<Option<CpuMetrics>> {
+
+     async fn fetch_within(
+        &self,
+        run_id: &str,
+        begin: i64,
+        end: i64,
+    ) -> anyhow::Result<Vec<CpuMetrics>> {
         self.client
-            .get(format!("{}/cpu_metrics/{id}", self.base_url))
+            .get(format!(
+                "{}/cpu_metrics/{run_id}?begin={begin}&end={end}",
+                self.base_url
+            ))
             .send()
             .await?
-            .json::<Option<CpuMetrics>>()
+            .json::<Vec<CpuMetrics>>()
             .await
             .context("Error fetching cpu metrics with id {id} from remote server")
     }
@@ -42,25 +52,57 @@ use tracing::instrument;
             .context("Error deleting cpu metrics with id {id}")
     }
 */
-#[instrument(name = "Fetch metrics by ID")]
-pub async fn fetch_metrics(
-    Path(metrics_id): Path<String>,
+
+//Start cpu_metric routes
+#[derive(Debug, Deserialize)]
+pub struct WithinParams {
+    begin: Option<i64>,
+    end: Option<i64>,
+}
+#[instrument(name = "Fetch CPU metrics within a time range")]
+pub async fn fetch_within(
+    Path(run_id): Path<String>,
+    Query(params): Query<WithinParams>,
     State(pool): State<SqlitePool>,
-) -> Result<impl IntoResponse, ServerError> {
-    // Impl response because we don't want to define
-    // server stuff ( impl response for Cpumetrics ) in
-    // our data_access file
-    let metrics = fetch_metrics_from_db(&pool, &metrics_id)
+) -> anyhow::Result<Json<Vec<CpuMetrics>>, ServerError> {
+    let begin = params.begin.unwrap_or(0);
+    let end = params.end.unwrap_or_else(|| Utc::now().timestamp());
+
+    tracing::debug!(
+        "Received request to fetch CPU metrics for run ID: {}, begin: {}, end: {}",
+        run_id,
+        begin,
+        end
+    );
+
+    let metrics = fetch_metrics_within_range(&pool, &run_id, begin, end)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to fetch metrics: {:?}", e);
+            tracing::error!("Failed to fetch metrics from database: {:?}", e);
             ServerError::DatabaseError(e)
         })?;
 
-    tracing::info!("Fetched metrics: {:?}", metrics);
+    tracing::info!("Successfully fetched {} CPU metrics", metrics.len());
     Ok(Json(metrics))
 }
 
+async fn fetch_metrics_within_range(
+    pool: &SqlitePool,
+    run_id: &str,
+    begin: i64,
+    end: i64,
+) -> Result<Vec<CpuMetrics>, sqlx::Error> {
+    let metrics = sqlx::query_as!(
+        CpuMetrics,
+        "SELECT * FROM cpu_metrics WHERE run_id = ? AND timestamp BETWEEN ? AND ?",
+        run_id,
+        begin,
+        end
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(metrics)
+}
 #[instrument(name = "Persist metrics into database")]
 pub async fn persist_metrics(
     State(pool): State<SqlitePool>,
@@ -75,44 +117,13 @@ pub async fn persist_metrics(
     Ok("Metrics persisted".to_string())
 }
 
-#[instrument(name = "Delete metrics by ID")]
-pub async fn delete_metrics(
-    Path(metrics_id): Path<String>,
-    State(pool): State<SqlitePool>,
-) -> anyhow::Result<String, ServerError> {
-    tracing::debug!("Deleting metrics with ID: {}", metrics_id);
-    delete_metrics_from_db(&pool, &metrics_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to delete metrics: {:?}", e);
-            ServerError::DatabaseError(e)
-        })?;
-    tracing::info!("Metrics deleted successfully");
-    Ok("Metrics deleted".to_string())
-}
-
-async fn fetch_metrics_from_db(
-    pool: &SqlitePool,
-    metrics_id: &str,
-) -> Result<CpuMetrics, sqlx::Error> {
-    let result = sqlx::query_as!(
-        CpuMetrics,
-        "SELECT * FROM cpu_metrics WHERE id = ?",
-        metrics_id
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(result)
-}
-
 async fn insert_metrics_into_db(
     pool: &SqlitePool,
     metrics: &CpuMetrics,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO cpu_metrics (id, cardamon_run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        metrics.id,
-        metrics.cardamon_run_id,
+        "INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        metrics.run_id,
         metrics.process_id,
         metrics.process_name,
         metrics.cpu_usage,
@@ -125,9 +136,101 @@ async fn insert_metrics_into_db(
     Ok(())
 }
 
-async fn delete_metrics_from_db(pool: &SqlitePool, metrics_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query!("DELETE FROM cpu_metrics WHERE id = ?", metrics_id)
-        .execute(pool)
-        .await?;
+// Below routes must confirm to these routes found in src/data_access/scenario_iteration.rs
+/*
+   async fn fetch_last(&self, _name: &str, _n: u32) -> anyhow::Result<Vec<ScenarioIteration>> {
+        todo!()
+    }
+
+    async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioIteration>> {
+        self.client
+            .get(format!("{}/scenario?id={id}", self.base_url))
+            .send()
+            .await?
+            .json::<Option<ScenarioIteration>>()
+            .await
+            .context("Error fetching scenario with id {id} from remote server")
+    }
+
+    async fn persist(&self, scenario: &ScenarioIteration) -> anyhow::Result<()> {
+        self.client
+            .post(format!("{}/scenario", self.base_url))
+            .json(scenario)
+            .send()
+            .await?
+            .error_for_status()
+            .map(|_| ())
+            .context("Error persisting scenario to remote server")
+    }
+
+    async fn delete(&self, id: &str) -> anyhow::Result<()> {
+        self.client
+            .delete(format!("{}/scenario?id={id}", self.base_url))
+            .send()
+            .await?
+            .error_for_status()
+            .map(|_| ())
+            .context("Error deleting scenario from remote server")
+    }
+*/
+#[instrument(name = "Fetch last scenario_iteration")]
+pub async fn scenario_iteration_fetch_last(
+    State(pool): State<SqlitePool>,
+) -> anyhow::Result<Json<ScenarioIteration>, ServerError> {
+    tracing::debug!("Received request to fetch last scenario run");
+
+    let scenario_iteration = fetch_last_scenario_iteration(&pool).await.map_err(|e| {
+        tracing::error!("Failed to fetch last scenario run from database: {:?}", e);
+        ServerError::DatabaseError(e)
+    })?;
+
+    tracing::info!("Successfully fetched last scenario run");
+    Ok(Json(scenario_iteration))
+}
+
+#[instrument(name = "Persist scenario iteration")]
+pub async fn scenario_iteration_persist(
+    State(pool): State<SqlitePool>,
+    Json(payload): Json<ScenarioIteration>,
+) -> anyhow::Result<String, ServerError> {
+    tracing::debug!("Received payload: {:?}", payload);
+
+    insert_scenario_iteration_into_db(&pool, &payload)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to persist scenario run: {:?}", e);
+            ServerError::DatabaseError(e)
+        })?;
+
+    tracing::info!("Scenario run persisted successfully");
+    Ok("Scenario run persisted".to_string())
+}
+
+async fn fetch_last_scenario_iteration(
+    pool: &SqlitePool,
+) -> Result<ScenarioIteration, sqlx::Error> {
+    let scenario_iteration = sqlx::query_as!(
+        ScenarioIteration,
+        "SELECT * FROM scenario_iteration ORDER BY start_time DESC LIMIT 1"
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(scenario_iteration)
+}
+
+async fn insert_scenario_iteration_into_db(
+    pool: &SqlitePool,
+    scenario_iteration: &ScenarioIteration,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO scenario_iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?, ?, ?, ?, ?)",
+        scenario_iteration.run_id,
+        scenario_iteration.scenario_name,
+        scenario_iteration.iteration,
+        scenario_iteration.start_time,
+        scenario_iteration.stop_time
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }

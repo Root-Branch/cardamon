@@ -10,8 +10,8 @@ use std::{fs, io::Read};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub debug_level: String,
-    pub metrics_server_url: String,
+    pub debug_level: Option<String>,
+    pub metrics_server_url: Option<String>,
     pub processes: Vec<Process>,
     pub scenarios: Vec<Scenario>,
     pub observations: Vec<Observation>,
@@ -89,7 +89,7 @@ impl Config {
                 .context("")?;
 
             for i in 0..observation.iterations {
-                let scenario_to_run = ScenarioToRun::new(scenario, i);
+                let scenario_to_run = ScenarioToExecute::new(scenario, i);
                 scenarios_to_run.push(scenario_to_run);
             }
         }
@@ -171,11 +171,11 @@ pub struct Observation {
 }
 
 #[derive(Debug)]
-pub struct ScenarioToRun<'a> {
+pub struct ScenarioToExecute<'a> {
     pub scenario: &'a Scenario,
     pub iteration: u32,
 }
-impl<'a> ScenarioToRun<'a> {
+impl<'a> ScenarioToExecute<'a> {
     fn new(scenario: &'a Scenario, iteration: u32) -> Self {
         Self {
             scenario,
@@ -187,7 +187,15 @@ impl<'a> ScenarioToRun<'a> {
 #[derive(Debug)]
 pub struct ExecutionPlan<'a> {
     pub processes: Vec<&'a Process>,
-    pub scenarios_to_run: Vec<ScenarioToRun<'a>>,
+    pub scenarios_to_run: Vec<ScenarioToExecute<'a>>,
+}
+impl<'a> ExecutionPlan<'a> {
+    pub fn scenario_names(&self) -> Vec<&str> {
+        self.scenarios_to_run
+            .iter()
+            .map(|x| x.scenario.name.as_str())
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -198,7 +206,7 @@ mod tests {
     #[test]
     fn can_load_config_file() -> anyhow::Result<()> {
         let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        assert_eq!(cfg.debug_level, "info");
+        assert_eq!(cfg.debug_level, Some("info".to_string()));
         Ok(())
     }
 

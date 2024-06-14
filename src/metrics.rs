@@ -54,9 +54,9 @@ pub struct CpuMetrics {
     pub timestamp: i64,
 }
 impl CpuMetrics {
-    pub fn into_data_access(&self, cardamon_run_id: &str) -> data_access::cpu_metrics::CpuMetrics {
+    pub fn into_data_access(&self, run_id: &str) -> data_access::cpu_metrics::CpuMetrics {
         data_access::cpu_metrics::CpuMetrics::new(
-            cardamon_run_id,
+            run_id,
             &self.process_id,
             &self.process_name,
             self.cpu_usage,

@@ -5,73 +5,107 @@
  */
 
 pub mod cpu_metrics;
-pub mod scenario_run;
+pub mod scenario_iteration;
 
+use crate::dataset::{IterationWithMetrics, ObservationDataset};
 use anyhow::{anyhow, Context};
-use cpu_metrics::CpuMetrics;
-use scenario_run::ScenarioRun;
+use async_trait::async_trait;
+use cpu_metrics::CpuMetricsDao;
+use scenario_iteration::ScenarioIterationDao;
 use sqlx::SqlitePool;
-use std::rc::Rc;
-use std::{fs, future::Future, path};
+use std::{fs, path};
 
-pub trait DataAccess<T> {
-    fn fetch(&self, id: &str) -> impl Future<Output = anyhow::Result<Option<T>>> + Send;
-    fn persist(&self, model: &T) -> impl Future<Output = anyhow::Result<()>> + Send;
-    fn delete(&self, id: &str) -> impl Future<Output = anyhow::Result<()>> + Send;
-}
+#[async_trait]
+pub trait DataAccessService: Send + Sync {
+    fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao;
+    fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao;
 
-pub trait DataAccessService {
-    fn scenario_run_dao(&self) -> Rc<impl DataAccess<ScenarioRun>>;
-    fn cpu_metrics_dao(&self) -> Rc<impl DataAccess<CpuMetrics>>;
+    async fn fetch_observation_dataset(
+        &self,
+        scenario_names: Vec<&str>,
+        previous_runs: u32,
+    ) -> anyhow::Result<ObservationDataset> {
+        // for each scenario, get the last `n` runs (including all iterations)
+        // grab the metrics associated with with run and group the data by scenario name.
+        let mut all_scenario_iterations_with_metrics = vec![];
+        for scenario_name in scenario_names.iter() {
+            let scenario_iterations = self
+                .scenario_iteration_dao()
+                .fetch_last(scenario_name, previous_runs)
+                .await?;
+
+            let mut scenario_iterations_with_metrics = vec![];
+            for scenario_iteration in scenario_iterations.into_iter() {
+                let cpu_metrics = self
+                    .cpu_metrics_dao()
+                    .fetch_within(
+                        &scenario_iteration.run_id,
+                        scenario_iteration.start_time,
+                        scenario_iteration.stop_time,
+                    )
+                    .await?;
+
+                let scenario_iteration_with_metrics =
+                    IterationWithMetrics::new(scenario_iteration, cpu_metrics);
+
+                scenario_iterations_with_metrics.push(scenario_iteration_with_metrics);
+            }
+            all_scenario_iterations_with_metrics.append(&mut scenario_iterations_with_metrics);
+        }
+
+        Ok(ObservationDataset::new(
+            all_scenario_iterations_with_metrics,
+        ))
+    }
 }
 
 pub struct LocalDataAccessService {
-    scenario_run_dao: Rc<scenario_run::LocalDao>,
-    cpu_metrics_dao: Rc<cpu_metrics::LocalDao>,
+    scenario_iteration_dao: scenario_iteration::LocalDao,
+    cpu_metrics_dao: cpu_metrics::LocalDao,
 }
 impl LocalDataAccessService {
     pub fn new(pool: SqlitePool) -> Self {
-        let scenario_run_dao = Rc::new(scenario_run::LocalDao::new(pool.clone()));
-        let cpu_metrics_dao = Rc::new(cpu_metrics::LocalDao::new(pool.clone()));
+        let scenario_iteration_dao = scenario_iteration::LocalDao::new(pool.clone());
+        let cpu_metrics_dao = cpu_metrics::LocalDao::new(pool.clone());
 
         Self {
-            scenario_run_dao,
+            scenario_iteration_dao,
             cpu_metrics_dao,
         }
     }
 }
 impl DataAccessService for LocalDataAccessService {
-    fn scenario_run_dao(&self) -> Rc<impl DataAccess<ScenarioRun>> {
-        self.scenario_run_dao.clone()
+    fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao {
+        &self.scenario_iteration_dao
     }
 
-    fn cpu_metrics_dao(&self) -> Rc<impl DataAccess<CpuMetrics>> {
-        self.cpu_metrics_dao.clone()
+    fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao {
+        &self.cpu_metrics_dao
     }
 }
 
 pub struct RemoteDataAccessService {
-    scenario_run_dao: Rc<scenario_run::RemoteDao>,
-    cpu_metrics_dao: Rc<cpu_metrics::RemoteDao>,
+    scenario_iteration_dao: scenario_iteration::RemoteDao,
+    cpu_metrics_dao: cpu_metrics::RemoteDao,
 }
 impl RemoteDataAccessService {
     pub fn new(base_url: &str) -> Self {
-        let scenario_run_dao = Rc::new(scenario_run::RemoteDao::new(base_url));
-        let cpu_metrics_dao = Rc::new(cpu_metrics::RemoteDao::new(base_url));
+        let scenario_iteration_dao = scenario_iteration::RemoteDao::new(base_url);
+        let cpu_metrics_dao = cpu_metrics::RemoteDao::new(base_url);
 
         Self {
-            scenario_run_dao,
+            scenario_iteration_dao,
             cpu_metrics_dao,
         }
     }
 }
 impl DataAccessService for RemoteDataAccessService {
-    fn scenario_run_dao(&self) -> Rc<impl DataAccess<ScenarioRun>> {
-        self.scenario_run_dao.clone()
+    fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao {
+        &self.scenario_iteration_dao
     }
 
-    fn cpu_metrics_dao(&self) -> Rc<impl DataAccess<CpuMetrics>> {
-        self.cpu_metrics_dao.clone()
+    fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao {
+        &self.cpu_metrics_dao
     }
 }
 

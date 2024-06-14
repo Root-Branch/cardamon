@@ -1,60 +1,46 @@
-# Cardamon
+<div align="center" markdown="1">
+  <h1>Cardamon</h1>
+  <p>🌱 The <b>Car</b>(<i>bon</i>) <b>da</b>(<i>shboard</i>) and live <b>mon</b>(<i>itor</i>)</p>
+  <p>Built with ❤️ by the <a href="https://rootandbranch.io">Root & Branch</a> team</p>
+  <small>
+    <i>Uh, it's cardmom ACKSUALLY!</i> - we know, but cardamon is a better acronym.
+  </small>
+</div>
 
-**car**(bon) **da**(_shboard_) and **mon**(_itor_) is a tool for measuring the energy usage and carbon emissions of your software.
+***
 
-_it's cardamom ACKSHUALLY_ - we know!
-
-_Copyright © 2023 Oliver Winks_
-
-# Usage
+Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software.
 
 - [Installation](#installation)
-- [Configuration](#configuration)
-- [Telegraf](#telegraf)
-- [Scenario Runner](#scenario-runner)
-  - [Running](#running)
-- [Requirements](#requirements)
-- [Live Dashboard](#live-dashboard)
-  - [Deployment](#deployment)
 - [CLI Reference](#cli-reference)
+- [Configuration](#configuration)
+- [Scenarios](#scenarios)
+- [Live Monitor](#live-monitor)
 
 ## Installation
 
-## Configuration
-
-Cardamon is configured using a `cardamon.toml` file in your project directory. 
-
-View an example configuration in example-cardamon.toml
-
-## Scenario Runner
-
-In this mode, Cardamon monitors your application while running "scenarios" written by you ( think tests, stress-tests, etc ) 
-
-Use this mode to compare your application with previous runs on a standard set of use cases. This is useful to monitor the carbon emissions of your application as it develops.
-
-### Running
-
-To run Cardamon with a specific configuration, use the following command:
-
-```
-cardamon run --name="dev" 
-```
-
-## Requirements
-- Telegraf - https://www.influxdata.com/time-series-platform/telegraf/
-
-## Live Dashboard
-
-Coming Soon!
-
-### Deployment
+Coming soon!
 
 ## CLI Reference
 
-Coming Soon!
+Coming soon!
+
+## Configuration
+
+Coming soon!
+
+## Scenarios
+
+Coming soon!
+
+## Live Monitor
+
+Coming soon!
 
 # License
 
 Cardamon is distributed under the terms of the Mozilla Public License (Version 2.0).
 
 See [LICENSE-MPL](https://www.mozilla.org/en-US/MPL/2.0) for details.
+
+_Copyright © 2023 Root & Branch ltd_
