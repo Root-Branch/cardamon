@@ -12,7 +12,7 @@ use std::{fs, io::Read};
 pub struct Config {
     pub debug_level: Option<String>,
     pub metrics_server_url: Option<String>,
-    pub processes: Vec<Process>,
+    pub processes: Vec<ProcessToExecute>,
     pub scenarios: Vec<Scenario>,
     pub observations: Vec<Observation>,
 }
@@ -43,10 +43,10 @@ impl Config {
     ///
     /// # Returns
     /// Some process if it can be found, None otherwise
-    fn find_process(&self, proc_name: &str) -> Option<&Process> {
+    fn find_process(&self, proc_name: &str) -> Option<&ProcessToExecute> {
         self.processes.iter().find(|proc| match proc {
-            Process::BareMetal { name, command: _ } => name == proc_name,
-            Process::Docker {
+            ProcessToExecute::BareMetal { name, command: _ } => name == proc_name,
+            ProcessToExecute::Docker {
                 name,
                 containers: _,
                 command: _,
@@ -67,7 +67,7 @@ impl Config {
     fn collect_processes(
         &self,
         scenarios_to_execute: &[ScenarioToExecute],
-    ) -> anyhow::Result<Vec<&Process>> {
+    ) -> anyhow::Result<Vec<&ProcessToExecute>> {
         let mut proc_set = std::collections::hash_set::HashSet::new();
         for scenario_to_exec in scenarios_to_execute.iter() {
             proc_set.extend(scenario_to_exec.scenario.processes.iter());
@@ -84,7 +84,7 @@ impl Config {
         Ok(processes)
     }
 
-    pub fn create_execution_plan(&self, name: &str) -> anyhow::Result<ExecutionPlan> {
+    fn collect_scenarios_to_execute(&self, name: &str) -> anyhow::Result<Vec<ScenarioToExecute>> {
         let mut scenarios = vec![];
 
         let obs = self.find_observation(name);
@@ -101,7 +101,8 @@ impl Config {
             // if there isn't an observation with the given name then try to find a single scenario
             // with the name instead.
             let scenario = self.find_scenario(name).context(format!(
-                "Unable to find observation or scenario with name: {name}"
+                "Unable to find observation or scenario with name: {}",
+                name
             ))?;
             scenarios.push(scenario);
         }
@@ -111,12 +112,27 @@ impl Config {
             scenarios_to_execute.append(&mut scenario.build_scenarios_to_execute());
         }
 
-        let processes = self.collect_processes(&scenarios_to_execute)?;
+        Ok(scenarios_to_execute)
+    }
 
-        // return a new Run
+    pub fn create_execution_plan(&self, name: &str) -> anyhow::Result<ExecutionPlan> {
+        let scenarios_to_execute = self.collect_scenarios_to_execute(name)?;
+        let processes_to_execute = self.collect_processes(&scenarios_to_execute)?;
+
         Ok(ExecutionPlan {
-            processes,
+            processes_to_execute,
             scenarios_to_execute,
+            external_processes_to_observe: vec![],
+        })
+    }
+
+    pub fn create_execution_plan_external_only(&self, name: &str) -> anyhow::Result<ExecutionPlan> {
+        let scenarios_to_execute = self.collect_scenarios_to_execute(name)?;
+
+        Ok(ExecutionPlan {
+            processes_to_execute: vec![],
+            scenarios_to_execute,
+            external_processes_to_observe: vec![],
         })
     }
 }
@@ -142,7 +158,7 @@ impl Scenario {
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum Process {
+pub enum ProcessToExecute {
     BareMetal {
         name: String,
         command: String,
@@ -154,10 +170,10 @@ pub enum Process {
     },
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Observation {
-    pub name: String,
-    pub scenarios: Vec<String>,
+#[derive(Debug, Clone)]
+pub enum ProcessToObserve {
+    Pid(u32),
+    ContainerName(String),
 }
 
 #[derive(Debug)]
@@ -174,10 +190,17 @@ impl<'a> ScenarioToExecute<'a> {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Observation {
+    pub name: String,
+    pub scenarios: Vec<String>,
+}
+
 #[derive(Debug)]
 pub struct ExecutionPlan<'a> {
-    pub processes: Vec<&'a Process>,
+    pub processes_to_execute: Vec<&'a ProcessToExecute>,
     pub scenarios_to_execute: Vec<ScenarioToExecute<'a>>,
+    pub external_processes_to_observe: Vec<ProcessToObserve>,
 }
 impl<'a> ExecutionPlan<'a> {
     pub fn scenario_names(&self) -> Vec<&str> {
@@ -185,6 +208,14 @@ impl<'a> ExecutionPlan<'a> {
             .iter()
             .map(|x| x.scenario.name.as_str())
             .collect()
+    }
+
+    /// Adds a process that has not been started by Cardamon to this execution plan for observation.
+    ///
+    /// # Arguments
+    /// * process_to_observe - A process which has been started externally to Cardamon.
+    pub fn observe_external_process(&mut self, process_to_observe: ProcessToObserve) {
+        self.external_processes_to_observe.push(process_to_observe);
     }
 }
 
@@ -259,8 +290,8 @@ mod tests {
             .collect_processes(&scenarios_to_execute)?
             .into_iter()
             .map(|proc| match proc {
-                Process::BareMetal { name, command: _ } => name.as_str(),
-                Process::Docker {
+                ProcessToExecute::BareMetal { name, command: _ } => name.as_str(),
+                ProcessToExecute::Docker {
                     name,
                     containers: _,
                     command: _,
@@ -297,15 +328,15 @@ mod tests {
             .sorted()
             .collect();
         let process_names: Vec<&str> = exec_plan
-            .processes
+            .processes_to_execute
             .into_iter()
             .map(|proc| match proc {
-                Process::Docker {
+                ProcessToExecute::Docker {
                     name,
                     containers: _,
                     command: _,
                 } => name.as_str(),
-                Process::BareMetal { name, command: _ } => name.as_str(),
+                ProcessToExecute::BareMetal { name, command: _ } => name.as_str(),
             })
             .sorted()
             .collect();
@@ -328,15 +359,15 @@ mod tests {
             .sorted()
             .collect();
         let process_names: Vec<&str> = exec_plan
-            .processes
+            .processes_to_execute
             .into_iter()
             .map(|proc| match proc {
-                Process::Docker {
+                ProcessToExecute::Docker {
                     name,
                     containers: _,
                     command: _,
                 } => name.as_str(),
-                Process::BareMetal { name, command: _ } => name.as_str(),
+                ProcessToExecute::BareMetal { name, command: _ } => name.as_str(),
             })
             .sorted()
             .collect();

@@ -52,6 +52,7 @@ pub trait DataAccessService: Send + Sync {
             }
             all_scenario_iterations_with_metrics.append(&mut scenario_iterations_with_metrics);
         }
+        all_scenario_iterations_with_metrics.reverse();
 
         Ok(ObservationDataset::new(
             all_scenario_iterations_with_metrics,

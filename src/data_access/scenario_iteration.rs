@@ -71,7 +71,7 @@ impl ScenarioIterationDao for LocalDao {
                 FROM scenario_iteration 
                 WHERE scenario_name = ?1 
                 GROUP BY run_id 
-                ORDER BY start_time ASC
+                ORDER BY start_time DESC
                 LIMIT ?2
             )
             "#,

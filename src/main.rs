@@ -1,11 +1,16 @@
-use cardamon::{config, data_access::LocalDataAccessService, run};
+use cardamon::{
+    config::{self, ProcessToObserve},
+    data_access::LocalDataAccessService,
+    run,
+};
 use clap::{Parser, Subcommand};
 use sqlx::{migrate::MigrateDatabase, SqlitePool};
+use tracing::Level;
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
 pub struct Cli {
-    #[arg(short, long, action = clap::ArgAction::SetFalse)]
+    #[arg(short, long)]
     pub verbose: bool,
 
     #[arg(short, long)]
@@ -17,7 +22,23 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    Run { name: String },
+    Run {
+        name: String,
+
+        #[arg(value_name = "EXTERNAL PIDs", short, long, value_delimiter = ',')]
+        pids: Option<Vec<String>>,
+
+        #[arg(
+            value_name = "EXTERNAL CONTAINER NAMES",
+            short,
+            long,
+            value_delimiter = ','
+        )]
+        containers: Option<Vec<String>>,
+
+        #[arg(long)]
+        external_only: bool,
+    },
 }
 
 #[tokio::main]
@@ -26,23 +47,42 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Initialize tracing
-    // let level = if args.verbose {
-    //     Level::DEBUG
-    // } else {
-    //     Level::TRACE
-    // };
-    let subscriber = tracing_subscriber::fmt().finish();
+    let level = if args.verbose {
+        Level::DEBUG
+    } else {
+        Level::WARN
+    };
+    let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
     match args.command {
-        Commands::Run { name } => {
+        Commands::Run {
+            name,
+            pids,
+            containers,
+            external_only,
+        } => {
             // set up local data access
             let pool = create_db().await?;
             let data_access_service = LocalDataAccessService::new(pool);
 
             // create an execution plan
             let config = config::Config::from_path(std::path::Path::new("./cardamon.toml"))?;
-            let execution_plan = config.create_execution_plan(&name)?;
+            let mut execution_plan = if external_only {
+                config.create_execution_plan_external_only(&name)
+            } else {
+                config.create_execution_plan(&name)
+            }?;
+
+            // add external processes to observe.
+            for pid in pids.unwrap_or(vec![]) {
+                let pid = pid.parse::<u32>()?;
+                execution_plan.observe_external_process(ProcessToObserve::Pid(pid));
+            }
+            for container_name in containers.unwrap_or(vec![]) {
+                execution_plan
+                    .observe_external_process(ProcessToObserve::ContainerName(container_name));
+            }
 
             // run it!
             let observation_dataset = run(execution_plan, &data_access_service).await?;
