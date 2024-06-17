@@ -5,16 +5,11 @@ pub mod metrics;
 pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
-use config::{ExecutionPlan, ScenarioToExecute};
+use config::{ExecutionPlan, ProcessToObserve, ScenarioToExecute};
 use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
 use std::time;
 use subprocess::{Exec, NullFile};
-
-pub enum ProcessToObserve {
-    ProcId(u32),
-    ContainerName(String),
-}
 
 /// Runs the given command as a detached processes. This function does not block because the
 /// process is managed by the OS and running separately from this thread.
@@ -56,9 +51,9 @@ fn run_command_detached(command: &str) -> anyhow::Result<u32> {
 /// # Returns
 ///
 /// A list of all the processes to observe
-fn run_process(proc: &config::Process) -> anyhow::Result<Vec<ProcessToObserve>> {
+fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToObserve>> {
     match proc {
-        config::Process::Docker {
+        config::ProcessToExecute::Docker {
             name: _,
             containers,
             command,
@@ -73,12 +68,12 @@ fn run_process(proc: &config::Process) -> anyhow::Result<Vec<ProcessToObserve>> 
                 .collect())
         }
 
-        config::Process::BareMetal { name: _, command } => {
+        config::ProcessToExecute::BareMetal { name: _, command } => {
             // run the command
             let pid = run_command_detached(command)?;
 
             // return the pid as a ProcessToObserve
-            Ok(vec![ProcessToObserve::ProcId(pid)])
+            Ok(vec![ProcessToObserve::Pid(pid)])
         }
     }
 }
@@ -105,6 +100,11 @@ async fn run_scenario<'a>(
     let args = &command_parts[1..];
 
     // run scenario ...
+    println!(
+        "Running scenario {} iteration {}",
+        scenario_to_execute.scenario.name,
+        scenario_to_execute.iteration + 1
+    );
     let output = tokio::process::Command::new(command)
         .args(args)
         .kill_on_drop(true)
@@ -140,11 +140,14 @@ pub async fn run<'a>(
     // create a unique cardamon run id
     let run_id = nanoid::nanoid!(5);
 
-    // run the application
-    let mut processes_to_observe = vec![];
-    for proc in exec_plan.processes.iter() {
-        let process_to_observe = run_process(proc)?;
-        processes_to_observe.extend(process_to_observe);
+    let mut processes_to_observe = exec_plan.external_processes_to_observe.to_vec(); // external procs to observe are cloned here.
+
+    // run the application if there is anything to run
+    if !exec_plan.processes_to_execute.is_empty() {
+        for proc in exec_plan.processes_to_execute.iter() {
+            let process_to_observe = run_process(proc)?;
+            processes_to_observe.extend(process_to_observe);
+        }
     }
 
     // ---- for each scenario ----
@@ -197,14 +200,14 @@ pub async fn run<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{config::Process, metrics_logger, run_process, ProcessToObserve};
+    use crate::{config::ProcessToExecute, metrics_logger, run_process, ProcessToObserve};
     use std::time::Duration;
     use sysinfo::{Pid, System};
 
     #[test]
     #[cfg(target_family = "windows")]
     fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
-        let process = Process::BareMetal {
+        let process = ProcessToExecute::BareMetal {
             name: "sleep".to_string(),
             command: "powershell sleep 15".to_string(),
         };
@@ -213,7 +216,7 @@ mod tests {
         assert_eq!(processes_to_observe.len(), 1);
 
         match processes_to_observe.first().expect("process should exist") {
-            ProcessToObserve::ProcId(pid) => {
+            ProcessToObserve::Pid(pid) => {
                 let mut system = System::new();
                 system.refresh_all();
                 let proc = system.process(Pid::from_u32(*pid));
@@ -229,7 +232,7 @@ mod tests {
     #[tokio::test]
     #[cfg(target_family = "windows")]
     async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
-        let process = Process::BareMetal {
+        let process = ProcessToExecute::BareMetal {
             name: "sleep".to_string(),
             command: "powershell sleep 20".to_string(),
         };

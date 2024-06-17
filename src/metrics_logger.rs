@@ -77,11 +77,9 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
         processes_to_observe
             .iter()
             .partition_map(|proc| match proc {
-                ProcessToObserve::ProcId(id) => itertools::Either::Left(id),
+                ProcessToObserve::Pid(id) => itertools::Either::Left(id),
                 ProcessToObserve::ContainerName(name) => itertools::Either::Right(name.clone()),
             });
-
-    println!("pids = {:?}", pids);
 
     // create a new cancellation token
     let token = CancellationToken::new();
@@ -93,7 +91,7 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
         let shared_metrics_log = shared_metrics_log.clone();
 
         join_set.spawn(async move {
-            println!("spawned bare metal logger");
+            tracing::info!("Logging PIDs: {:?}", pids);
             tokio::select! {
                 _ = token.cancelled() => {}
                 _ = bare_metal::keep_logging(
@@ -109,6 +107,7 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
         let shared_metrics_log = shared_metrics_log.clone();
 
         join_set.spawn(async move {
+            tracing::info!("Logging containers: {:?}", container_names);
             tokio::select! {
                 _ = token.cancelled() => {}
                 _ = docker::keep_logging(
