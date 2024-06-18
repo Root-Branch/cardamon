@@ -1,8 +1,7 @@
 mod server;
-
 use axum::routing::{get, post, Router};
 use dotenv::dotenv;
-use server::{fetch_within, persist_metrics, scenario_iteration_persist};
+use server::metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist};
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use std::fs::File;
 use tracing::{info, subscriber::set_global_default, Subscriber};
@@ -36,7 +35,14 @@ async fn create_app(pool: SqlitePool) -> Router {
     .route("/user", get(routes::user::get_user))
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
+    let ui_router = Router::new()
+        .route("/api/runs", method_router)
+        .route("/api/runs/:run_id", method_router)
+        .route("/api/scenarios/:scenario_id", method_router)
+        .route("/api/metrics", method_router)
+        .route("/api/cpu-metrics", method_router);
     Router::new()
+        .merge(ui_router)
         .route("/cpu_metrics", post(persist_metrics))
         .route("/cpu_metrics/:id", get(fetch_within))
         //.route("/cpu_metrics/:id", delete(delete_metrics)) removed for now
