@@ -45,11 +45,16 @@ impl Config {
     /// Some process if it can be found, None otherwise
     fn find_process(&self, proc_name: &str) -> Option<&ProcessToExecute> {
         self.processes.iter().find(|proc| match proc {
-            ProcessToExecute::BareMetal { name, command: _ } => name == proc_name,
+            ProcessToExecute::BareMetal {
+                name,
+                command: _,
+                redirect: _,
+            } => name == proc_name,
             ProcessToExecute::Docker {
                 name,
                 containers: _,
                 command: _,
+                redirect: _,
             } => name == proc_name,
         })
     }
@@ -137,6 +142,14 @@ impl Config {
     }
 }
 
+#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
+#[serde(tag = "to", rename_all = "lowercase")]
+pub enum Redirect {
+    Null,
+    Parent,
+    File,
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Scenario {
     pub name: String,
@@ -162,11 +175,13 @@ pub enum ProcessToExecute {
     BareMetal {
         name: String,
         command: String,
+        redirect: Option<Redirect>,
     },
     Docker {
         name: String,
         containers: Vec<String>,
         command: String,
+        redirect: Option<Redirect>,
     },
 }
 
@@ -290,11 +305,16 @@ mod tests {
             .collect_processes(&scenarios_to_execute)?
             .into_iter()
             .map(|proc| match proc {
-                ProcessToExecute::BareMetal { name, command: _ } => name.as_str(),
+                ProcessToExecute::BareMetal {
+                    name,
+                    command: _,
+                    redirect: _,
+                } => name.as_str(),
                 ProcessToExecute::Docker {
                     name,
                     containers: _,
                     command: _,
+                    redirect: _,
                 } => name.as_str(),
             })
             .sorted()
@@ -335,8 +355,13 @@ mod tests {
                     name,
                     containers: _,
                     command: _,
+                    redirect: _,
                 } => name.as_str(),
-                ProcessToExecute::BareMetal { name, command: _ } => name.as_str(),
+                ProcessToExecute::BareMetal {
+                    name,
+                    command: _,
+                    redirect: _,
+                } => name.as_str(),
             })
             .sorted()
             .collect();
@@ -366,8 +391,13 @@ mod tests {
                     name,
                     containers: _,
                     command: _,
+                    redirect: _,
                 } => name.as_str(),
-                ProcessToExecute::BareMetal { name, command: _ } => name.as_str(),
+                ProcessToExecute::BareMetal {
+                    name,
+                    command: _,
+                    redirect: _,
+                } => name.as_str(),
             })
             .sorted()
             .collect();

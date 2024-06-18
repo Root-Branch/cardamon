@@ -168,7 +168,7 @@ mod tests {
             .iter()
             .map(|run| run.run_id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(run_ids, vec!["1", "1", "1", "2", "2", "2"]);
+        assert_eq!(run_ids, vec!["2", "2", "2", "3", "3", "3"]);
 
         let iterations = scenario_iterations
             .iter()

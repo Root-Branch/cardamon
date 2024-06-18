@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use cardamon::{
     config::{self, ProcessToObserve},
     data_access::LocalDataAccessService,
@@ -66,8 +68,14 @@ async fn main() -> anyhow::Result<()> {
             let pool = create_db().await?;
             let data_access_service = LocalDataAccessService::new(pool);
 
+            // open config file
+            let path = match &args.file {
+                Some(path) => Path::new(path),
+                None => Path::new("./cardamon.toml"),
+            };
+
             // create an execution plan
-            let config = config::Config::from_path(std::path::Path::new("./cardamon.toml"))?;
+            let config = config::Config::from_path(path)?;
             let mut execution_plan = if external_only {
                 config.create_execution_plan_external_only(&name)
             } else {

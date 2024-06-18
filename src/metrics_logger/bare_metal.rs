@@ -147,6 +147,41 @@ mod tests {
     #[tokio::test]
     #[cfg(target_family = "unix")]
     async fn metrics_can_be_gatered_using_process_id() -> anyhow::Result<()> {
-        todo!();
+        // spawn a test process
+
+        use subprocess::NullFile;
+        let mut proc = Exec::cmd("bash")
+            .arg("-c")
+            .arg("while true; do shuf -i 0-1337 -n 1; done")
+            .detached()
+            .stdout(NullFile)
+            .popen()
+            .context("Failed to spawn detached process")?;
+        let pid = proc.pid().context("Process should have a pid")?;
+
+        // create a new sysinfo system
+        let mut system = System::new_all();
+
+        // gather metrics for a little while
+        let mut metrics_log = vec![];
+        let iterations = 50;
+        for _ in 0..iterations {
+            let metrics = get_metrics(&mut system, pid).await?;
+            metrics_log.push(metrics);
+            sleep(Duration::from_millis(200)).await;
+        }
+        proc.kill().context("Failed to kill process")?;
+
+        // metrics log should have 10 entries
+        assert_eq!(metrics_log.len(), iterations);
+
+        // metrics should contain non-zero cpu_usage
+        let cpu_usage = metrics_log.iter().fold(0_f64, |acc, metrics| {
+            acc + metrics.cpu_usage / metrics.core_count as f64
+        }) / iterations as f64;
+        println!("{cpu_usage}");
+        assert!(cpu_usage > 0_f64);
+
+        Ok(())
     }
 }
