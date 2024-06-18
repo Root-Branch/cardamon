@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            SELECT * \n            FROM scenario_iteration \n            WHERE scenario_name = ?1 AND run_id in (\n                SELECT run_id \n                FROM scenario_iteration \n                WHERE scenario_name = ?1 \n                GROUP BY run_id \n                ORDER BY start_time ASC\n                LIMIT ?2\n            )\n            ",
+  "query": "SELECT * FROM scenario_iteration ORDER BY start_time DESC LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -30,7 +30,7 @@
       }
     ],
     "parameters": {
-      "Right": 2
+      "Right": 0
     },
     "nullable": [
       false,
@@ -40,5 +40,5 @@
       false
     ]
   },
-  "hash": "4b959bb520ac8de777a1b3dfc71edca53bda85156129e4fd329959df456f342c"
+  "hash": "db729d680a66ace4952f3bbabc82b2aeaeda1f47c713841effec346a5b930325"
 }

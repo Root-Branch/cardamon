@@ -1,0 +1,25 @@
+debug_level = "info" # Optional - defaults to "info"
+#metrics_server_url = "http://cardamon.rootandbranch.io" # Optional - assumes local db if not specifed
+
+#[[processes]]
+#type = "docker"
+#name = "db"                      # Required - must be unique among ALL processes
+#containers = ["postgres"]        # Required
+#command = "docker compose up -d" # Required
+
+[[processes]]
+type = "baremetal"
+name = "test"                                      # Required
+command = "powershell while($true) { get-random }" # Required
+redirect.to = "null"
+
+[[scenarios]]
+name = "basket_10"                    # Required
+desc = "Adds ten items to the basket" # Optional 
+command = "powershell sleep 15"       # Required - commands for running scenarios
+iterations = 2                        # Optional - defaults to 1
+processes = ["test"]                  # Required - prepend process name with `_` to ignore
+
+[[observations]]
+name = "obs_1"            # Required
+scenarios = ["basket_10"] # Required
