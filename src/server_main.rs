@@ -1,14 +1,19 @@
+use server::ui_routes::ApiDoc;
+use utoipa::OpenApi;
 mod server;
 use axum::routing::{get, post, Router};
 use dotenv::dotenv;
-use server::metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist};
+use server::{
+    metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist},
+    ui_routes::{get_cpu_metrics, get_iterations, get_metrics, get_runs, get_scenarios_for_run},
+};
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use std::fs::File;
 use tracing::{info, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt::writer::MakeWriterExt, layer::SubscriberExt, EnvFilter, Registry};
-
+use utoipa_swagger_ui::SwaggerUi;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
@@ -36,13 +41,15 @@ async fn create_app(pool: SqlitePool) -> Router {
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
     let ui_router = Router::new()
-        .route("/api/runs", method_router)
-        .route("/api/runs/:run_id", method_router)
-        .route("/api/scenarios/:scenario_id", method_router)
-        .route("/api/metrics", method_router)
-        .route("/api/cpu-metrics", method_router);
+        .route("/api/runs", get(get_runs))
+        .route("/api/runs/:run_id/scenarios", get(get_scenarios_for_run))
+        .route("/api/scenarios/:scenario_id", get(get_iterations))
+        .route("/api/metrics", get(get_metrics))
+        .route("/api/cpu-metrics", get(get_cpu_metrics));
+
     Router::new()
         .merge(ui_router)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/cpu_metrics", post(persist_metrics))
         .route("/cpu_metrics/:id", get(fetch_within))
         //.route("/cpu_metrics/:id", delete(delete_metrics)) removed for now
