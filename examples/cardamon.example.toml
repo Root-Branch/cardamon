@@ -6,11 +6,13 @@ type = "docker"
 name = "db"                      # Required - must be unique among ALL processes
 containers = ["postgres"]        # Required
 command = "docker compose up -d" # Required
+redirect.to = "file"             # Optional - values include "null" | "parent" | "file", defaults to "file"
 
 [[processes]]
 type = "bare_metal"
 name = "server"      # Required
 command = "yarn dev" # Required
+redirect.to = "file" # Optional - values include "null" | "parent" | "file", defaults to "file"
 
 [[scenarios]]
 name = "basket_10" # Required
