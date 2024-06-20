@@ -5,7 +5,7 @@ pub mod metrics;
 pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
-use config::{ExecutionPlan, ProcessToObserve, Redirect, ScenarioToExecute};
+use config::{ExecutionPlan, ProcessToExecute, ProcessToObserve, Redirect, ScenarioToExecute};
 use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
 use std::{fs::File, path::Path, time};
@@ -73,11 +73,12 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
         config::ProcessToExecute::Docker {
             name: _,
             containers,
-            command,
+            up,
+            down: _,
             redirect,
         } => {
             // run the command
-            run_command_detached(command, redirect)?;
+            run_command_detached(up, redirect)?;
 
             // return the containers as vector of ProcessToObserve
             Ok(containers
@@ -88,11 +89,12 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
 
         config::ProcessToExecute::BareMetal {
             name: _,
-            command,
+            up,
+            down: _,
             redirect,
         } => {
             // run the command
-            let pid = run_command_detached(command, redirect)?;
+            let pid = run_command_detached(up, redirect)?;
 
             // return the pid as a ProcessToObserve
             Ok(vec![ProcessToObserve::Pid(pid)])
@@ -208,7 +210,23 @@ pub async fn run<'a>(
     // ---- end for ----
 
     // stop the application
-    // TODO: Implement this!
+    for proc in exec_plan.processes_to_execute.iter() {
+        match proc {
+            ProcessToExecute::Docker {
+                name: _,
+                containers: _,
+                up: _,
+                down: Some(command),
+                redirect,
+            } => run_command_detached(command, redirect);,
+            ProcessToExecute::BareMetal {
+                name,
+                up,
+                down,
+                redirect,
+            } => todo!(),
+        }
+    }
 
     // create a summary to return to the user
     let scenario_names = exec_plan.scenario_names();
@@ -279,7 +297,8 @@ mod tests {
     fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
         let process = ProcessToExecute::BareMetal {
             name: "sleep".to_string(),
-            command: "sleep 15".to_string(),
+            up: "sleep 15".to_string(),
+            down: None,
             redirect: Some(Redirect::Null),
         };
         let processes_to_observe = run_process(&process)?;
@@ -305,7 +324,8 @@ mod tests {
     async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
         let process = ProcessToExecute::BareMetal {
             name: "sleep".to_string(),
-            command: "sleep 20".to_string(),
+            up: "sleep 20".to_string(),
+            down: None,
             redirect: Some(Redirect::Null),
         };
         let processes_to_observe = run_process(&process)?;

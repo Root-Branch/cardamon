@@ -47,13 +47,15 @@ impl Config {
         self.processes.iter().find(|proc| match proc {
             ProcessToExecute::BareMetal {
                 name,
-                command: _,
+                up: _,
+                down: _,
                 redirect: _,
             } => name == proc_name,
             ProcessToExecute::Docker {
                 name,
                 containers: _,
-                command: _,
+                up: _,
+                down: _,
                 redirect: _,
             } => name == proc_name,
         })
@@ -174,13 +176,15 @@ impl Scenario {
 pub enum ProcessToExecute {
     BareMetal {
         name: String,
-        command: String,
+        up: String,
+        down: Option<String>,
         redirect: Option<Redirect>,
     },
     Docker {
         name: String,
         containers: Vec<String>,
-        command: String,
+        up: String,
+        down: Option<String>,
         redirect: Option<Redirect>,
     },
 }
@@ -307,13 +311,15 @@ mod tests {
             .map(|proc| match proc {
                 ProcessToExecute::BareMetal {
                     name,
-                    command: _,
+                    up: _,
+                    down: _,
                     redirect: _,
                 } => name.as_str(),
                 ProcessToExecute::Docker {
                     name,
                     containers: _,
-                    command: _,
+                    up: _,
+                    down: _,
                     redirect: _,
                 } => name.as_str(),
             })
@@ -354,12 +360,14 @@ mod tests {
                 ProcessToExecute::Docker {
                     name,
                     containers: _,
-                    command: _,
+                    up: _,
+                    down: _,
                     redirect: _,
                 } => name.as_str(),
                 ProcessToExecute::BareMetal {
                     name,
-                    command: _,
+                    up: _,
+                    down: _,
                     redirect: _,
                 } => name.as_str(),
             })
@@ -390,12 +398,14 @@ mod tests {
                 ProcessToExecute::Docker {
                     name,
                     containers: _,
-                    command: _,
+                    up: _,
+                    down: _,
                     redirect: _,
                 } => name.as_str(),
                 ProcessToExecute::BareMetal {
                     name,
-                    command: _,
+                    up: _,
+                    down: _,
                     redirect: _,
                 } => name.as_str(),
             })

@@ -5,12 +5,14 @@ debug_level = "info" # Optional - defaults to "info"
 #type = "docker"
 #name = "db"                      # Required - must be unique among ALL processes
 #containers = ["postgres"]        # Required
-#command = "docker compose up -d" # Required
+#up = "docker compose up -d" # Required
+#down = "docker down"
 
 [[processes]]
 type = "baremetal"
-name = "test"                                                    # Required
-command = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\"" # Required
+name = "test"                                               # Required
+up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\"" # Required
+down = "kill {pid}"
 redirect.to = "file"
 
 [[scenarios]]
