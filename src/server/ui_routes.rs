@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use super::errors::ServerError;
 use crate::server::ui_types::*;
 use axum::{
@@ -7,7 +9,7 @@ use axum::{
 use cardamon::data_access::{cpu_metrics::CpuMetrics, scenario_iteration::ScenarioIteration};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 use utoipa::OpenApi;
 
 #[utoipa::path(
@@ -48,10 +50,6 @@ pub async fn get_runs(
             .timestamp_millis(),
         None => 0,
     };
-    debug!(
-        "End timestamp {}, Start timestamp {}",
-        end_timestamp, start_timestamp
-    );
     // Get each iteration
     let scenario_iterations =
         fetch_scenario_iteration_within_range(&pool, start_timestamp, end_timestamp)
@@ -60,7 +58,6 @@ pub async fn get_runs(
                 tracing::error!("Failed to fetch runs from database {:?}", e);
                 ServerError::DatabaseError(e)
             })?;
-    info!("Scenario_iterations {:?}", scenario_iterations);
     // Fetch all CPU metrics for these run_ids in a single query
     let all_cpu_metrics = fetch_metrics_for_multiple_runs(&pool, start_timestamp, end_timestamp)
         .await
@@ -68,6 +65,7 @@ pub async fn get_runs(
             tracing::error!("Failed to fetch CPU metrics from database {:?}", e);
             ServerError::DatabaseError(e)
         })?;
+    let now = SystemTime::now();
     let mapped_iterations = create_scenario_metrics_vec(scenario_iterations, all_cpu_metrics);
     let mut data: Vec<Runs> = Vec::new();
 
@@ -119,6 +117,8 @@ pub async fn get_runs(
         data.push(run);
     }
 
+    info!("mapping data-structures took {:?}", now.elapsed());
+    info!("Length of data: {:?}", data.len());
     Ok(Json(RunsResponse { data }))
 }
 fn create_scenario_metrics_vec(
