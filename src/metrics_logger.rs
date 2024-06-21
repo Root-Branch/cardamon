@@ -77,7 +77,7 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
         processes_to_observe
             .iter()
             .partition_map(|proc| match proc {
-                ProcessToObserve::Pid(id) => itertools::Either::Left(id),
+                ProcessToObserve::Pid(_, id) => itertools::Either::Left(id),
                 ProcessToObserve::ContainerName(name) => itertools::Either::Right(name.clone()),
             });
 

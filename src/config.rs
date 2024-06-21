@@ -44,21 +44,7 @@ impl Config {
     /// # Returns
     /// Some process if it can be found, None otherwise
     fn find_process(&self, proc_name: &str) -> Option<&ProcessToExecute> {
-        self.processes.iter().find(|proc| match proc {
-            ProcessToExecute::BareMetal {
-                name,
-                up: _,
-                down: _,
-                redirect: _,
-            } => name == proc_name,
-            ProcessToExecute::Docker {
-                name,
-                containers: _,
-                up: _,
-                down: _,
-                redirect: _,
-            } => name == proc_name,
-        })
+        self.processes.iter().find(|proc| proc.name == proc_name)
     }
 
     /// Finds the intersection of processes across all the given scenarios.
@@ -173,25 +159,23 @@ impl Scenario {
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
-pub enum ProcessToExecute {
-    BareMetal {
-        name: String,
-        up: String,
-        down: Option<String>,
-        redirect: Option<Redirect>,
-    },
-    Docker {
-        name: String,
-        containers: Vec<String>,
-        up: String,
-        down: Option<String>,
-        redirect: Option<Redirect>,
-    },
+pub enum ProcessType {
+    BareMetal,
+    Docker { containers: Vec<String> },
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct ProcessToExecute {
+    pub name: String,
+    pub up: String,
+    pub down: Option<String>,
+    pub redirect: Option<Redirect>,
+    pub process: ProcessType,
 }
 
 #[derive(Debug, Clone)]
 pub enum ProcessToObserve {
-    Pid(u32),
+    Pid(Option<String>, u32),
     ContainerName(String),
 }
 
@@ -308,20 +292,9 @@ mod tests {
         let process_names = cfg
             .collect_processes(&scenarios_to_execute)?
             .into_iter()
-            .map(|proc| match proc {
-                ProcessToExecute::BareMetal {
-                    name,
-                    up: _,
-                    down: _,
-                    redirect: _,
-                } => name.as_str(),
-                ProcessToExecute::Docker {
-                    name,
-                    containers: _,
-                    up: _,
-                    down: _,
-                    redirect: _,
-                } => name.as_str(),
+            .map(|proc| match proc.process {
+                ProcessType::BareMetal => proc.name.as_str(),
+                ProcessType::Docker { containers: _ } => proc.name.as_str(),
             })
             .sorted()
             .collect::<Vec<_>>();
@@ -356,20 +329,9 @@ mod tests {
         let process_names: Vec<&str> = exec_plan
             .processes_to_execute
             .into_iter()
-            .map(|proc| match proc {
-                ProcessToExecute::Docker {
-                    name,
-                    containers: _,
-                    up: _,
-                    down: _,
-                    redirect: _,
-                } => name.as_str(),
-                ProcessToExecute::BareMetal {
-                    name,
-                    up: _,
-                    down: _,
-                    redirect: _,
-                } => name.as_str(),
+            .map(|proc| match proc.process {
+                ProcessType::Docker { containers: _ } => proc.name.as_str(),
+                ProcessType::BareMetal => proc.name.as_str(),
             })
             .sorted()
             .collect();
@@ -394,21 +356,7 @@ mod tests {
         let process_names: Vec<&str> = exec_plan
             .processes_to_execute
             .into_iter()
-            .map(|proc| match proc {
-                ProcessToExecute::Docker {
-                    name,
-                    containers: _,
-                    up: _,
-                    down: _,
-                    redirect: _,
-                } => name.as_str(),
-                ProcessToExecute::BareMetal {
-                    name,
-                    up: _,
-                    down: _,
-                    redirect: _,
-                } => name.as_str(),
-            })
+            .map(|proc| proc.name.as_str())
             .sorted()
             .collect();
 

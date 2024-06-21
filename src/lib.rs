@@ -5,7 +5,7 @@ pub mod metrics;
 pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
-use config::{ExecutionPlan, ProcessToExecute, ProcessToObserve, Redirect, ScenarioToExecute};
+use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
 use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
 use std::{fs::File, path::Path, time};
@@ -69,16 +69,10 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
 ///
 /// A list of all the processes to observe
 fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToObserve>> {
-    match proc {
-        config::ProcessToExecute::Docker {
-            name: _,
-            containers,
-            up,
-            down: _,
-            redirect,
-        } => {
+    match &proc.process {
+        config::ProcessType::Docker { containers } => {
             // run the command
-            run_command_detached(up, redirect)?;
+            run_command_detached(&proc.up, &proc.redirect)?;
 
             // return the containers as vector of ProcessToObserve
             Ok(containers
@@ -87,17 +81,12 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
                 .collect())
         }
 
-        config::ProcessToExecute::BareMetal {
-            name: _,
-            up,
-            down: _,
-            redirect,
-        } => {
+        config::ProcessType::BareMetal => {
             // run the command
-            let pid = run_command_detached(up, redirect)?;
+            let pid = run_command_detached(&proc.up, &proc.redirect)?;
 
             // return the pid as a ProcessToObserve
-            Ok(vec![ProcessToObserve::Pid(pid)])
+            Ok(vec![ProcessToObserve::Pid(Some(proc.name.clone()), pid)])
         }
     }
 }
@@ -157,6 +146,61 @@ async fn run_scenario<'a>(
     }
 }
 
+fn shutdown_application(
+    exec_plan: &ExecutionPlan,
+    running_processes: &[ProcessToObserve],
+) -> anyhow::Result<()> {
+    // for each process in the execution plan that has a "down" command, attempt to run that
+    // command.
+    for proc in exec_plan.processes_to_execute.iter() {
+        if let Some(down_command) = &proc.down {
+            match proc.process {
+                ProcessType::BareMetal => {
+                    // find the pid associated with this process
+                    let pid = running_processes.iter().find_map(|p| match p {
+                        ProcessToObserve::Pid(Some(name), pid) if name == &proc.name => Some(*pid),
+                        _ => None,
+                    });
+
+                    // if pid can't be found then log an error
+                    if let Some(pid) = pid {
+                        // replace {pid} with the actual PID in the down command
+                        let down_command = down_command.replace("{pid}", &pid.to_string());
+
+                        let res = run_command_detached(&down_command, &proc.redirect);
+                        if res.is_err() {
+                            let err = res.unwrap_err();
+                            tracing::warn!(
+                                "Failed to shutdown process with name {}\n{}",
+                                proc.name,
+                                err
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            "Unable to find PID for bare-metal process with name: {}",
+                            proc.name
+                        );
+                    }
+                }
+                ProcessType::Docker { containers: _ } => {
+                    let res = run_command_detached(down_command, &proc.redirect);
+                    if res.is_err() {
+                        let err = res.unwrap_err();
+                        tracing::warn!(
+                            "Failed to shutdown process with name {}\n{}",
+                            proc.name,
+                            err
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
     data_access_service: &dyn DataAccessService,
@@ -210,23 +254,7 @@ pub async fn run<'a>(
     // ---- end for ----
 
     // stop the application
-    for proc in exec_plan.processes_to_execute.iter() {
-        match proc {
-            ProcessToExecute::Docker {
-                name: _,
-                containers: _,
-                up: _,
-                down: Some(command),
-                redirect,
-            } => run_command_detached(command, redirect);,
-            ProcessToExecute::BareMetal {
-                name,
-                up,
-                down,
-                redirect,
-            } => todo!(),
-        }
-    }
+    shutdown_application(&exec_plan, &processes_to_observe)?;
 
     // create a summary to return to the user
     let scenario_names = exec_plan.scenario_names();
@@ -241,103 +269,118 @@ pub async fn run<'a>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{ProcessToExecute, Redirect},
+        config::{ProcessToExecute, ProcessType},
         metrics_logger, run_process, ProcessToObserve,
     };
     use std::time::Duration;
     use sysinfo::{Pid, System};
 
-    #[test]
     #[cfg(target_family = "windows")]
-    fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
-        let process = ProcessToExecute::BareMetal {
-            name: "sleep".to_string(),
-            command: "powershell sleep 15".to_string(),
-        };
-        let processes_to_observe = run_process(&process)?;
+    mod windows {
+        use super::*;
 
-        assert_eq!(processes_to_observe.len(), 1);
+        #[test]
+        fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
+            let process = ProcessToExecute {
+                name: "sleep".to_string(),
+                up: "powershell sleep 15".to_string(),
+                down: None,
+                redirect: None,
+                process: ProcessType::BareMetal,
+            };
+            let processes_to_observe = run_process(&process)?;
 
-        match processes_to_observe.first().expect("process should exist") {
-            ProcessToObserve::Pid(pid) => {
-                let mut system = System::new();
-                system.refresh_all();
-                let proc = system.process(Pid::from_u32(*pid));
-                assert!(proc.is_some());
+            assert_eq!(processes_to_observe.len(), 1);
+
+            match processes_to_observe.first().expect("process should exist") {
+                ProcessToObserve::Pid(_, pid) => {
+                    let mut system = System::new();
+                    system.refresh_all();
+                    let proc = system.process(Pid::from_u32(*pid));
+                    assert!(proc.is_some());
+                }
+
+                _ => panic!("expected to find a process id"),
             }
 
-            _ => panic!("expected to find a process id"),
+            Ok(())
         }
 
-        Ok(())
+        #[tokio::test]
+        async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
+            let process = ProcessToExecute {
+                name: "sleep".to_string(),
+                up: "powershell sleep 20".to_string(),
+                down: None,
+                redirect: None,
+                process: ProcessType::BareMetal,
+            };
+            let processes_to_observe = run_process(&process)?;
+            let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
+
+            tokio::time::sleep(Duration::from_secs(10)).await;
+
+            let metrics_log = stop_handle.stop().await?;
+
+            assert!(!metrics_log.has_errors());
+            assert!(!metrics_log.get_metrics().is_empty());
+
+            Ok(())
+        }
     }
 
-    #[tokio::test]
-    #[cfg(target_family = "windows")]
-    async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
-        let process = ProcessToExecute::BareMetal {
-            name: "sleep".to_string(),
-            command: "powershell sleep 20".to_string(),
-        };
-        let processes_to_observe = run_process(&process)?;
-        let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
-
-        tokio::time::sleep(Duration::from_secs(10)).await;
-
-        let metrics_log = stop_handle.stop().await?;
-
-        assert!(!metrics_log.has_errors());
-        assert!(!metrics_log.get_metrics().is_empty());
-
-        Ok(())
-    }
-
-    #[test]
     #[cfg(target_family = "unix")]
-    fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
-        let process = ProcessToExecute::BareMetal {
-            name: "sleep".to_string(),
-            up: "sleep 15".to_string(),
-            down: None,
-            redirect: Some(Redirect::Null),
-        };
-        let processes_to_observe = run_process(&process)?;
+    mod unix {
+        use super::*;
+        use crate::config::Redirect;
 
-        assert_eq!(processes_to_observe.len(), 1);
+        #[test]
+        fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
+            let process = ProcessToExecute {
+                name: "sleep".to_string(),
+                up: "sleep 15".to_string(),
+                down: None,
+                redirect: Some(Redirect::Null),
+                process_type: ProcessType::BareMetal,
+            };
+            let processes_to_observe = run_process(&process)?;
 
-        match processes_to_observe.first().expect("process should exist") {
-            ProcessToObserve::Pid(pid) => {
-                let mut system = System::new();
-                system.refresh_all();
-                let proc = system.process(Pid::from_u32(*pid));
-                assert!(proc.is_some());
+            assert_eq!(processes_to_observe.len(), 1);
+
+            match processes_to_observe.first().expect("process should exist") {
+                ProcessToObserve::Pid(None, pid) => {
+                    let mut system = System::new();
+                    system.refresh_all();
+                    let proc = system.process(Pid::from_u32(*pid));
+                    assert!(proc.is_some());
+                }
+
+                _ => panic!("expected to find a process id"),
             }
 
-            _ => panic!("expected to find a process id"),
+            Ok(())
         }
 
-        Ok(())
-    }
+        #[tokio::test]
+        async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
+            let process = ProcessToExecute {
+                name: "sleep".to_string(),
+                up: "sleep 20".to_string(),
+                down: None,
+                redirect: Some(Redirect::Null),
+                process_type: ProcessType::BareMetal,
+            };
+            let processes_to_observe = run_process(&process)?;
+            let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
-    #[tokio::test]
-    #[cfg(target_family = "unix")]
-    async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
-        let process = ProcessToExecute::BareMetal {
-            name: "sleep".to_string(),
-            up: "sleep 20".to_string(),
-            down: None,
-            redirect: Some(Redirect::Null),
-        };
-        let processes_to_observe = run_process(&process)?;
-        let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
+            tokio::time::sleep(Duration::from_secs(10)).await;
 
-        tokio::time::sleep(Duration::from_secs(10)).await;
+            let metrics_log = stop_handle.stop().await?;
 
-        let metrics_log = stop_handle.stop().await?;
+            assert!(!metrics_log.has_errors());
+            assert!(!metrics_log.get_metrics().is_empty());
 
-        assert!(!metrics_log.has_errors());
-        assert!(!metrics_log.get_metrics().is_empty());
-
-        Ok(())
+            Ok(())
+        }
     }
 }
