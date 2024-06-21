@@ -5,6 +5,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ServerError {
     DatabaseError(sqlx::Error),
+    TimeFormatError(chrono::ParseError),
     #[allow(dead_code)]
     OtherError,
 }
@@ -14,6 +15,7 @@ impl ServerError {
         match self {
             ServerError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::OtherError => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::TimeFormatError(_) => StatusCode::BAD_REQUEST,
         }
     }
 
@@ -25,6 +27,7 @@ impl ServerError {
                 _ => format!("Database error: {}", e),
             },
             ServerError::OtherError => "Un-used error".to_string(),
+            ServerError::TimeFormatError(e) => format!("Time parsing error: {}", e),
         }
     }
 }

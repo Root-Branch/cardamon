@@ -315,4 +315,3 @@ pub struct CpuMetric {
     #[schema(example = "2023-06-15T10:35:00.000Z")]
     pub timestamp: String,
 }
-
