@@ -2,21 +2,21 @@ debug_level = "info"
 metrics_server_url = "http://cardamon.rootandbranch.io"
 
 [[processes]]
-type = "docker"
 name = "db"
-containers = ["postgres"]
-command = "powershell sleep 5" # "docker compose up -d"
+up = "powershell sleep 5"         # "docker compose up -d"
+process.type = "docker"
+process.containers = ["postgres"]
 
 [[processes]]
-type = "baremetal"
 name = "server"
-command = "powershell sleep 5" # "yarn dev"
+up = "powershell sleep 5"  # "yarn dev"
+process.type = "baremetal"
 
 [[processes]]
-type = "docker"
 name = "mailgun"
-containers = ["mailgun"]
-command = "powershell sleep 5" # docker compose -f docker-compose.mailgun.yml up -d
+up = "powershell sleep 5"        # docker compose -f docker-compose.mailgun.yml up -d
+process.type = "docker"
+process.containers = ["mailgun"]
 
 [[scenarios]]
 name = "basket_10"

@@ -2,16 +2,18 @@ debug_level = "info" # Optional - defaults to "info"
 #metrics_server_url = "http://cardamon.rootandbranch.io" # Optional - assumes local db if not specifed
 
 #[[processes]]
-#type = "docker"
 #name = "db"                      # Required - must be unique among ALL processes
-#containers = ["postgres"]        # Required
-#command = "docker compose up -d" # Required
+#up = "docker compose up -d" # Required
+#down = "docker down"
+#process.type = "docker"
+#process.containers = ["postgres"]
 
 [[processes]]
-type = "baremetal"
-name = "test"                                      # Required
-command = "powershell while($true) { get-random }" # Required
+name = "test"                                 # Required
+up = "powershell while($true) { get-random }" # Required
+down = "stop-process {pid}"
 redirect.to = "null"
+process.type = "baremetal"
 
 [[scenarios]]
 name = "basket_10"                    # Required

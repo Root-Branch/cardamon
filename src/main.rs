@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
             // add external processes to observe.
             for pid in pids.unwrap_or(vec![]) {
                 let pid = pid.parse::<u32>()?;
-                execution_plan.observe_external_process(ProcessToObserve::Pid(pid));
+                execution_plan.observe_external_process(ProcessToObserve::Pid(None, pid));
             }
             for container_name in containers.unwrap_or(vec![]) {
                 execution_plan

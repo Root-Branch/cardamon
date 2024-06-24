@@ -2,17 +2,17 @@ debug_level = "info"                                    # Optional - defaults to
 metrics_server_url = "http://cardamon.rootandbranch.io" # Optional - assumes local db if not specifed
 
 [[processes]]
-type = "docker"
-name = "db"                      # Required - must be unique among ALL processes
-containers = ["postgres"]        # Required
-command = "docker compose up -d" # Required
-redirect.to = "file"             # Optional - values include "null" | "parent" | "file", defaults to "file"
+name = "db"                       # Required - must be unique among ALL processes
+up = "docker compose up -d"       # Required
+redirect.to = "file"              # Optional - values include "null" | "parent" | "file", defaults to "file"
+process.type = "docker"
+process.containers = ["postgres"] # Required
 
 [[processes]]
-type = "bare_metal"
 name = "server"      # Required
-command = "yarn dev" # Required
+up = "yarn dev"      # Required
 redirect.to = "file" # Optional - values include "null" | "parent" | "file", defaults to "file"
+type = "bare_metal"
 
 [[scenarios]]
 name = "basket_10" # Required
