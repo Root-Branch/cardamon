@@ -56,29 +56,25 @@ async fn main() -> anyhow::Result<()> {
     };
     // Parse config
     let config = config::Config::from_path(path)?;
-    match config.debug_level.clone() {
-        Some(l) => {
-            let level = match l.as_str() {
-                "error" => Level::DEBUG,
-                "warn" => Level::DEBUG,
-                "debug" => Level::DEBUG,
-                "trace" => Level::DEBUG,
-                _ => Level::WARN,
-            };
-            tracing::subscriber::set_global_default(
-                tracing_subscriber::fmt().with_max_level(level).finish(),
-            )?;
+
+    // Set the debug level, prioritizing command-line args over config
+    let level = if let Some(verbose) = args.verbose {
+        if verbose {
+            Level::DEBUG
+        } else {
+            Level::WARN
         }
-        None => {
-            let level = if args.verbose {
-                Level::DEBUG
-            } else {
-                Level::WARN
-            };
-            let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
-            tracing::subscriber::set_global_default(subscriber)?;
+    } else {
+        match config.debug_level.as_deref() {
+            Some("error") => Level::ERROR,
+            Some("warn") => Level::WARN,
+            Some("debug") => Level::DEBUG,
+            Some("trace") => Level::TRACE,
+            _ => Level::WARN,
         }
     };
+    let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
+    tracing::subscriber::set_global_default(subscriber)?;
     match args.command {
         Commands::Run {
             name,
