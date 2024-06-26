@@ -1,0 +1,12 @@
+services:
+  test:
+    image: ubuntu:20.04
+    container_name: test
+    command: bash -c "while true; do shuf -i 0-1337 -n 1; sleep 1; done"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+        reservations:
+          cpus: '0.25'
+

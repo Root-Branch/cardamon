@@ -58,22 +58,19 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::from_path(path)?;
 
     // Set the debug level, prioritizing command-line args over config
-    let level = if let Some(verbose) = args.verbose {
-        if verbose {
-            Level::DEBUG
-        } else {
-            Level::WARN
-        }
-    } else {
-        match config.debug_level.as_deref() {
-            Some("error") => Level::ERROR,
-            Some("warn") => Level::WARN,
-            Some("debug") => Level::DEBUG,
-            Some("trace") => Level::TRACE,
-            _ => Level::WARN,
-        }
+    let mut level = match config.debug_level.as_deref() {
+        Some("info") => Level::INFO,
+        Some("error") => Level::ERROR,
+        Some("warn") => Level::WARN,
+        Some("debug") => Level::DEBUG,
+        Some("trace") => Level::TRACE,
+        _ => Level::INFO,
     };
+    if args.verbose.unwrap_or(false) {
+        level = Level::DEBUG;
+    }
     let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
+    println!("Setting sub level to {level}");
     tracing::subscriber::set_global_default(subscriber)?;
     match args.command {
         Commands::Run {
