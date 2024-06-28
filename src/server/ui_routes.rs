@@ -50,6 +50,7 @@ pub async fn get_runs(
             .timestamp_millis(),
         None => 0,
     };
+
     // Get each iteration
     let scenario_iterations =
         fetch_scenario_iteration_within_range(&pool, start_timestamp, end_timestamp)
@@ -58,6 +59,7 @@ pub async fn get_runs(
                 tracing::error!("Failed to fetch runs from database {:?}", e);
                 ServerError::DatabaseError(e)
             })?;
+
     // Fetch all CPU metrics for these run_ids in a single query
     let all_cpu_metrics = fetch_metrics_for_multiple_runs(&pool, start_timestamp, end_timestamp)
         .await
@@ -121,6 +123,7 @@ pub async fn get_runs(
     info!("Length of data: {:?}", data.len());
     Ok(Json(RunsResponse { data }))
 }
+
 fn create_scenario_metrics_vec(
     scenario_iterations: Vec<ScenarioIteration>,
     all_cpu_metrics: Vec<CpuMetrics>,
@@ -131,8 +134,8 @@ fn create_scenario_metrics_vec(
             let matching_metrics = all_cpu_metrics
                 .iter()
                 .filter(|metric| {
-                    metric.timestamp >= scenario.start_time
-                        && metric.timestamp <= scenario.stop_time
+                    metric.time_stamp >= scenario.start_time
+                        && metric.time_stamp <= scenario.stop_time
                 })
                 .cloned()
                 .collect();
@@ -140,6 +143,7 @@ fn create_scenario_metrics_vec(
         })
         .collect()
 }
+
 async fn fetch_metrics_for_multiple_runs(
     pool: &SqlitePool,
     begin: i64,
@@ -147,7 +151,7 @@ async fn fetch_metrics_for_multiple_runs(
 ) -> Result<Vec<CpuMetrics>, sqlx::Error> {
     let metrics = sqlx::query_as!(
         CpuMetrics,
-        "SELECT * FROM cpu_metrics WHERE timestamp BETWEEN ? AND ?",
+        "SELECT * FROM cpu_metrics WHERE time_stamp BETWEEN ? AND ?",
         begin,
         end
     )
@@ -155,6 +159,7 @@ async fn fetch_metrics_for_multiple_runs(
     .await?;
     Ok(metrics)
 }
+
 async fn fetch_scenario_iteration_within_range(
     pool: &SqlitePool,
     begin: i64,
@@ -170,6 +175,7 @@ async fn fetch_scenario_iteration_within_range(
     .await?;
     Ok(runs)
 }
+
 #[utoipa::path(
     get,
     path = "/api/runs/{runId}",

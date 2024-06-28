@@ -1,7 +1,15 @@
 DELETE FROM cpu_metrics;
 
-INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) 
-VALUES 
+INSERT INTO cpu_metrics (
+    run_id,
+    process_id,
+    process_name,
+    cpu_usage,
+    total_usage,
+    core_count,
+    time_stamp
+)
+VALUES
 
 -- run_1, scenario_1, it 1
 ('1', '1337', 'yarn', 65, 100, 4, 1717507590000),

@@ -1,7 +1,9 @@
 DELETE FROM scenario_iteration;
 
-INSERT INTO scenario_iteration (run_id, scenario_name, iteration, start_time, stop_time) 
-VALUES 
+INSERT INTO scenario_iteration (
+    run_id, scenario_name, iteration, start_time, stop_time
+)
+VALUES
 ('1', 'scenario_1', 1, 1717507590000, 1717507591000),
 ('1', 'scenario_2', 1, 1717507592000, 1717507593000),
 ('1', 'scenario_2', 2, 1717507594000, 1717507695000),
