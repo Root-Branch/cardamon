@@ -260,7 +260,7 @@ CMD ["sleep", "infinity"]
             Bytes::from(tar_buffer)
         };
         let time_now = SystemTime::now();
-        let image_id = nanoid!().to_lowercase();
+        let image_id = nanoid!(10, &nanoid::alphabet::SAFE[..62]).to_lowercase();
         let image_id_latest = format!("{}:latest", image_id);
         // Build the image
         let options = BuildImageOptions {
@@ -277,7 +277,10 @@ CMD ["sleep", "infinity"]
             output.unwrap();
         }
         // Create and start the container
-        let container_name = format!("cardamon-test-container-{}", nanoid!().to_lowercase());
+        let container_name = format!(
+            "cardamon-test-container-{}",
+            nanoid!(10, &nanoid::alphabet::SAFE[..62]).to_lowercase()
+        );
         let container = docker
             .create_container(
                 Some(CreateContainerOptions {
