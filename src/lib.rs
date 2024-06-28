@@ -347,7 +347,7 @@ mod tests {
                 up: "sleep 15".to_string(),
                 down: None,
                 redirect: Some(Redirect::Null),
-                process_type: ProcessType::BareMetal,
+                process: ProcessType::BareMetal,
             };
             let processes_to_observe = run_process(&process)?;
 
@@ -374,7 +374,7 @@ mod tests {
                 up: "sleep 20".to_string(),
                 down: None,
                 redirect: Some(Redirect::Null),
-                process_type: ProcessType::BareMetal,
+                process: ProcessType::BareMetal,
             };
             let processes_to_observe = run_process(&process)?;
             let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;

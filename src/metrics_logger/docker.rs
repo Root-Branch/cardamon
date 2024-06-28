@@ -186,4 +186,157 @@ pub async fn get_container_status(container_name: &str) -> anyhow::Result<String
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::metrics::{CpuMetrics, MetricsLog};
+    use crate::metrics_logger::docker::get_container_status;
+    use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
+    use bollard::image::{BuildImageOptions, RemoveImageOptions};
+    use bollard::Docker;
+    use bytes::Bytes;
+    use chrono::Utc;
+    use futures_util::StreamExt;
+    use nanoid::nanoid;
+    use std::io::Cursor;
+    use std::time::SystemTime;
+    use tar::{Builder, Header};
+    #[test]
+    fn test_metrics_log() {
+        let mut log = MetricsLog::new();
+
+        let metrics = CpuMetrics {
+            process_id: "123".to_string(),
+            process_name: "test".to_string(),
+            cpu_usage: 50.0,
+            core_count: 4,
+            timestamp: Utc::now().timestamp_millis(),
+        };
+
+        log.push_metrics(metrics);
+        assert_eq!(log.get_metrics().len(), 1);
+
+        log.push_error(anyhow::anyhow!("Error here"));
+        assert!(log.has_errors());
+        assert_eq!(log.get_errors().len(), 1);
+    }
+    #[tokio::test]
+    async fn test_container_status() {
+        // Test container status with a tiny container
+        // Connect with system defaults ( socket on unix, http on windows )
+        let docker = Docker::connect_with_local_defaults().unwrap();
+
+        // Smallest image I can create that doesn't exit ( 4.2mb), alpine is 7 ish
+        let dockerfile = r#"
+FROM busybox
+CMD ["sleep", "infinity"]
+"#;
+
+        // Bollard has 2 options for creating an image
+        // 1 - Dockerfile from *remote* url
+        // 2 - Dockerfile from *tar file*
+        // We'll create an in-memory tar file and use this
+        // We want the bytes of the tar file for building
+        let tar_bytes = {
+            // Create a buffer to hold tar archive data
+            let mut tar_buffer = Vec::new();
+            // Use a nested block as we want to explicityly end the borrow of tar_buffer by
+            // tar_builder
+            {
+                // Create a builder that'll write to our buffer
+                let mut tar_builder = Builder::new(&mut tar_buffer);
+                // Gnu format header, set path of file, size & permissions
+                let mut header = Header::new_gnu();
+                header.set_path("Dockerfile").unwrap();
+                header.set_size(dockerfile.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                // Append to builder
+                tar_builder
+                    .append(&header, Cursor::new(dockerfile))
+                    .unwrap();
+                // Write to tar_buffer
+                tar_builder.finish().unwrap();
+            }
+            // return bytes ( wanted by bollard::build_image
+            Bytes::from(tar_buffer)
+        };
+        let time_now = SystemTime::now();
+        let image_id = nanoid!().to_lowercase();
+        let image_id_latest = format!("{}:latest", image_id);
+        // Build the image
+        let options = BuildImageOptions {
+            dockerfile: "Dockerfile",
+            t: &image_id_latest,
+            ..Default::default()
+        };
+        // build image
+        let mut build_stream = docker.build_image(options, None, Some(tar_bytes));
+        // Docker streams the build process of making an image, meaning you can stop half-way if
+        // something is wrong / you want a timeout for example.
+        // In this case we want to continue until there's no more
+        while let Some(output) = build_stream.next().await {
+            output.unwrap();
+        }
+        // Create and start the container
+        let container_name = format!("cardamon-test-container-{}", nanoid!().to_lowercase());
+        let container = docker
+            .create_container(
+                Some(CreateContainerOptions {
+                    name: container_name.as_str(),
+                    ..Default::default()
+                }),
+                Config {
+                    image: Some(image_id_latest),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+        docker
+            .start_container::<String>(&container.id, None)
+            .await
+            .unwrap();
+
+        println!(
+            "Time taken to build and start container {}ms",
+            time_now.elapsed().unwrap().as_millis()
+        );
+
+        // Test get_container_status
+        let status = get_container_status(&container_name).await.unwrap();
+        assert_eq!(status, "running", "Container should be in 'running' state");
+
+        // CLEANUP
+        let time_cleanup = SystemTime::now();
+        // We could "stop" container then "remove" container, but remove + force does this for us
+        // ( Plus it sets the "grace" period docker has to 0, immediately stopping it )
+        docker
+            .remove_container(
+                &container.id,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    v: true,
+                    link: false,
+                }),
+            )
+            .await
+            .unwrap();
+        docker
+            .remove_image(
+                &image_id,
+                Some(RemoveImageOptions {
+                    force: true,
+                    noprune: false,
+                }),
+                None,
+            )
+            .await
+            .unwrap();
+        let time_cleanup_elapsed = time_cleanup.elapsed().unwrap();
+        println!(
+            "Time taken to stop and remove container {}ms | {}s",
+            time_cleanup_elapsed.as_millis(),
+            time_cleanup_elapsed.as_secs()
+        );
+    }
+}
