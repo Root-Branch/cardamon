@@ -4,5 +4,6 @@ CREATE TABLE IF NOT EXISTS scenario_iteration (
     iteration INT NOT NULL,
     start_time BIGINT NOT NULL,
     stop_time BIGINT NOT NULL,
-    PRIMARY KEY (run_id, scenario_name, iteration)
+    PRIMARY KEY (run_id, scenario_name, iteration),
+    FOREIGN KEY (run_id) REFERENCES run (id)
 );

@@ -14,21 +14,27 @@ use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt::writer::MakeWriterExt, layer::SubscriberExt, EnvFilter, Registry};
 use utoipa_swagger_ui::SwaggerUi;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv().ok();
+
     let subscriber = get_subscriber("cardamon".into(), "debug".into());
     init_subscriber(subscriber);
+
     let pool = create_db().await?;
     let app = create_app(pool).await;
+
     let listener = tokio::net::TcpListener::bind(format!(
         "0.0.0.0:{}",
         std::env::var("SERVER_PORT").expect("Server port not set")
     ))
     .await
     .unwrap();
+
     info!("Starting cardamon server");
     axum::serve(listener, app).await.unwrap();
+
     Ok(())
 }
 
@@ -96,6 +102,7 @@ fn init_subscriber(subscriber: impl Subscriber + Sync + Send) {
     LogTracer::init().expect("Failed to set logger");
     set_global_default(subscriber).expect("Failed to set subscriber");
 }
+
 async fn create_db() -> anyhow::Result<SqlitePool> {
     let db_url = "sqlite://cardamon.db";
     if !sqlx::Sqlite::database_exists(db_url).await? {

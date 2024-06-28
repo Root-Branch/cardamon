@@ -93,7 +93,7 @@ async fn fetch_metrics_within_range(
 ) -> Result<Vec<CpuMetrics>, sqlx::Error> {
     let metrics = sqlx::query_as!(
         CpuMetrics,
-        "SELECT * FROM cpu_metrics WHERE run_id = ? AND timestamp BETWEEN ? AND ?",
+        "SELECT * FROM cpu_metrics WHERE run_id = ? AND time_stamp BETWEEN ? AND ?",
         run_id,
         begin,
         end
@@ -121,14 +121,14 @@ async fn insert_metrics_into_db(
     metrics: &CpuMetrics,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, time_stamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
         metrics.run_id,
         metrics.process_id,
         metrics.process_name,
         metrics.cpu_usage,
         metrics.total_usage,
         metrics.core_count,
-        metrics.timestamp
+        metrics.time_stamp
     )
     .execute(pool)
     .await?;

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS cpu_metrics (
     cpu_usage DOUBLE NOT NULL,
     total_usage DOUBLE NOT NULL,
     core_count INTEGER NOT NULL,
-    timestamp BIGINT NOT NULL,
-    PRIMARY KEY (run_id, process_id, timestamp)
+    time_stamp BIGINT NOT NULL,
+    PRIMARY KEY (run_id, process_id, time_stamp),
+    FOREIGN KEY (run_id) REFERENCES run (id)
 );

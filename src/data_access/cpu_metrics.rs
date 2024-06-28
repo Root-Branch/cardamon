@@ -1,9 +1,3 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 use anyhow::Context;
 use async_trait::async_trait;
 
@@ -15,7 +9,7 @@ pub struct CpuMetrics {
     pub cpu_usage: f64,
     pub total_usage: f64,
     pub core_count: i64,
-    pub timestamp: i64,
+    pub time_stamp: i64,
 }
 impl CpuMetrics {
     pub fn new(
@@ -25,7 +19,7 @@ impl CpuMetrics {
         cpu_usage: f64,
         total_usage: f64,
         core_count: i64,
-        timestamp: i64,
+        time_stamp: i64,
     ) -> Self {
         CpuMetrics {
             run_id: String::from(run_id),
@@ -34,7 +28,7 @@ impl CpuMetrics {
             cpu_usage,
             total_usage,
             core_count,
-            timestamp,
+            time_stamp,
         }
     }
 }
@@ -72,7 +66,7 @@ impl CpuMetricsDao for LocalDao {
         sqlx::query_as!(
             CpuMetrics,
             r#"
-            SELECT * FROM cpu_metrics WHERE run_id = ?1 AND timestamp >= ?2 AND timestamp <= ?3
+            SELECT * FROM cpu_metrics WHERE run_id = ?1 AND time_stamp >= ?2 AND time_stamp <= ?3
             "#,
             run_id,
             begin,
@@ -84,7 +78,7 @@ impl CpuMetricsDao for LocalDao {
     }
 
     async fn persist(&self, metrics: &CpuMetrics) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) \
+        sqlx::query!("INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, time_stamp) \
                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", 
             metrics.run_id,
             metrics.process_id,
@@ -92,7 +86,7 @@ impl CpuMetricsDao for LocalDao {
             metrics.cpu_usage,
             metrics.total_usage,
             metrics.core_count,
-            metrics.timestamp
+            metrics.time_stamp
         )
             .execute(&self.pool)
             .await
