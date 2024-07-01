@@ -10,6 +10,7 @@ use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
 use std::{fs::File, path::Path, time};
 use subprocess::{Exec, NullFile, Redirection};
+use tracing::info;
 
 /// Runs the given command as a detached processes. This function does not block because the
 /// process is managed by the OS and running separately from this thread.
@@ -50,7 +51,10 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
 
             exec.detached()
                 .popen()
-                .context("Failed to spawn detached process")?
+                .context(format!(
+                    "Failed to spawn detached process, command: {}",
+                    command
+                ))?
                 .pid()
                 .context("Process should have a PID")
         }
@@ -122,8 +126,9 @@ async fn run_scenario<'a>(
         .args(args)
         .kill_on_drop(true)
         .output()
-        .await?;
-
+        .await
+        .context(format!("Tokio command failed to run {command}"))?;
+    info!("Ran command {}", scenario_to_execute.scenario.command);
     if output.status.success() {
         let stop = time::SystemTime::now()
             .duration_since(time::UNIX_EPOCH)?
@@ -140,8 +145,9 @@ async fn run_scenario<'a>(
     } else {
         let error_message = String::from_utf8_lossy(&output.stderr).to_string();
         Err(anyhow::anyhow!(
-            "Scenario execution failed: {}",
-            error_message
+            "Scenario execution failed: {}. Command: {}",
+            error_message,
+            scenario_to_execute.scenario.command
         ))
     }
 }
@@ -341,7 +347,7 @@ mod tests {
                 up: "sleep 15".to_string(),
                 down: None,
                 redirect: Some(Redirect::Null),
-                process_type: ProcessType::BareMetal,
+                process: ProcessType::BareMetal,
             };
             let processes_to_observe = run_process(&process)?;
 
@@ -368,7 +374,7 @@ mod tests {
                 up: "sleep 20".to_string(),
                 down: None,
                 redirect: Some(Redirect::Null),
-                process_type: ProcessType::BareMetal,
+                process: ProcessType::BareMetal,
             };
             let processes_to_observe = run_process(&process)?;
             let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;

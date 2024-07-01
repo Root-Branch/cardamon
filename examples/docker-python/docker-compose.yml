@@ -1,5 +1,0 @@
-services:
-  stress_server:
-    build: .
-    ports:
-      - "8000:8000"

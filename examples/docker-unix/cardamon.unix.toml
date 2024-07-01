@@ -1,0 +1,28 @@
+debug_level = "debug"
+
+
+[[processes]]
+name = "db"
+up = "bash -c '(cd examples/docker-unix/db && docker compose up -d db)'"
+down = "bash -c '(cd examples/docker-unix/db && docker compose down -v )'"
+redirect.to = "parent"
+process.type = "docker"
+process.containers = ["db"]
+[[processes]]
+name = "test"
+up = "bash -c '(cd examples/docker-unix/test && docker compose up -d test)'"
+down = "bash -c '(cd examples/docker-unix/test && docker compose down -v)'"
+redirect.to = "parent"
+process.type = "docker"
+process.containers = ["test"]
+
+[[scenarios]]
+name = "basket_10"
+desc = "Adds ten items to the basket"
+command = "sleep 15"
+iterations = 2
+processes = ["test", "db"]
+
+[[observations]]
+name = "obs_1"
+scenarios = ["basket_10"]
