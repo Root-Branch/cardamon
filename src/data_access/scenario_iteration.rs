@@ -135,7 +135,7 @@ mod tests {
 
     #[sqlx::test(
         migrations = "./migrations",
-        fixtures("../../fixtures/scenario_iterations.sql")
+        fixtures("../../fixtures/runs.sql", "../../fixtures/scenario_iterations.sql")
     )]
     async fn fetch_last_should_work(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         let scenario_service = LocalDao::new(pool.clone());

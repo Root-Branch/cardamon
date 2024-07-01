@@ -252,7 +252,11 @@ mod tests {
 
     #[sqlx::test(
         migrations = "./migrations",
-        fixtures("../fixtures/scenario_iterations.sql", "../fixtures/cpu_metrics.sql")
+        fixtures(
+            "../fixtures/runs.sql",
+            "../fixtures/scenario_iterations.sql",
+            "../fixtures/cpu_metrics.sql"
+        )
     )]
     async fn datasets_work(pool: SqlitePool) -> anyhow::Result<()> {
         let data_access_service = LocalDataAccessService::new(pool.clone());

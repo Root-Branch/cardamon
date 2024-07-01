@@ -123,16 +123,20 @@ mod tests {
         let run_service = LocalDao::new(pool.clone());
 
         // fetch the runs between ... and ...
-        let runs = run_service.fetch_within(0, 1).await?;
+        let runs = run_service
+            .fetch_within(1717507590000, 1717507601000)
+            .await?;
 
         let run_ids = runs.iter().map(|run| run.id.as_str()).collect::<Vec<_>>();
         assert_eq!(run_ids, vec!["1"]);
 
         // fetch the runs between ... and ...
-        let runs = run_service.fetch_within(0, 2).await?;
+        let runs = run_service
+            .fetch_within(1717507590000, 1717507795000)
+            .await?;
 
         let run_ids = runs.iter().map(|run| run.id.as_str()).collect::<Vec<_>>();
-        assert_eq!(run_ids, vec!["2", "2", "2", "3", "3", "3"]);
+        assert_eq!(run_ids, vec!["1", "2", "3"]);
 
         Ok(())
     }

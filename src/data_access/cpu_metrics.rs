@@ -151,7 +151,7 @@ mod tests {
 
     #[sqlx::test(
         migrations = "./migrations",
-        fixtures("../../fixtures/cpu_metrics.sql")
+        fixtures("../../fixtures/runs.sql", "../../fixtures/cpu_metrics.sql")
     )]
     async fn local_cpu_metrics_fetch_within(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         let metrics_service = LocalDao::new(pool.clone());
