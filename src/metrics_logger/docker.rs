@@ -38,19 +38,21 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
     };
 
     loop {
-        let mut filter = HashMap::new();
         // Only running containers, we re-try in a second if the container is not running yet
+        let mut filter = HashMap::new();
         filter.insert(String::from("status"), vec![String::from("running")]);
         filter.insert(String::from("name"), container_names.clone());
         debug!("Listing containers with filter: {:?}", filter);
-        let containers = match docker
+
+        let container_list = docker
             .list_containers(Some(ListContainersOptions {
                 all: true,
                 filters: filter,
                 ..Default::default()
             }))
-            .await
-        {
+            .await;
+
+        let containers = match container_list {
             Ok(containers) => {
                 debug!(
                     "Successfully listed containers. Count: {}",
@@ -64,21 +66,24 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
                 continue;
             }
         };
+
         // Wait 1s and re-try, this is not an error, containers take a while to spin up
         if containers.is_empty() {
             warn!("No running containers");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             continue;
         }
+
         for container in containers {
             if let Some(container_id) = container.id.as_ref() {
-                let container_name_with_slash: String = container
+                let container_name_with_slash = container
                     .names
                     .clone()
                     .and_then(|names| names.first().cloned())
                     .unwrap_or_else(|| "unknown".to_string());
                 let container_name = &container_name_with_slash[1..container_name_with_slash.len()]; // Container name "test" would be "/test" here, remove first char
-                match docker
+
+                let docker_stats = docker
                     .stats(
                         container_id,
                         Some(StatsOptions {
@@ -87,8 +92,9 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
                         }),
                     )
                     .next()
-                    .await
-                {
+                    .await;
+
+                match docker_stats {
                     Some(Ok(stats)) => {
                         let cpu_metrics =
                             calculate_cpu_metrics(container_id, container_name.to_string(), &stats);
@@ -144,6 +150,7 @@ fn calculate_cpu_metrics(container_id: &str, container_name: String, stats: &Sta
         timestamp: Utc::now().timestamp_millis(),
     }
 }
+
 pub async fn get_container_status(container_name: &str) -> anyhow::Result<String> {
     let docker = Docker::connect_with_defaults().map_err(|e| {
         error!("Failed to connect to Docker: {}", e);
@@ -187,23 +194,31 @@ pub async fn get_container_status(container_name: &str) -> anyhow::Result<String
 
 #[cfg(test)]
 mod tests {
-    use crate::metrics::{CpuMetrics, MetricsLog};
-    use crate::metrics_logger::docker::{get_container_status, keep_logging};
-    use crate::metrics_logger::StopHandle;
-    use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
-    use bollard::image::{BuildImageOptions, RemoveImageOptions};
-    use bollard::Docker;
+    use crate::{
+        metrics::{CpuMetrics, MetricsLog},
+        metrics_logger::{
+            docker::{get_container_status, keep_logging},
+            StopHandle,
+        },
+    };
+    use bollard::{
+        container::{Config, CreateContainerOptions, RemoveContainerOptions},
+        image::{BuildImageOptions, RemoveImageOptions},
+        Docker,
+    };
     use bytes::Bytes;
     use chrono::Utc;
     use core::time;
     use futures_util::StreamExt;
     use nanoid::nanoid;
-    use std::io::Cursor;
-    use std::sync::{Arc, Mutex};
+    use std::{
+        io::Cursor,
+        sync::{Arc, Mutex},
+    };
     use tar::{Builder, Header};
-    use tokio::task::JoinSet;
-    use tokio::time::sleep;
+    use tokio::{task::JoinSet, time::sleep};
     use tokio_util::sync::CancellationToken;
+
     #[test]
     fn test_metrics_log() {
         let mut log = MetricsLog::new();
@@ -223,6 +238,7 @@ mod tests {
         assert!(log.has_errors());
         assert_eq!(log.get_errors().len(), 1);
     }
+
     async fn create_and_start_container(docker: &Docker) -> (String, String, String) {
         // container_id,
         // container_name
@@ -304,17 +320,20 @@ CMD ["sleep", "infinity"]
 
         (container.id, container_name, image_id)
     }
+
     #[tokio::test]
     async fn test_container_status() {
         // Test container status with a tiny container
         // Connect with system defaults ( socket on unix, http on windows )
         let docker = Docker::connect_with_local_defaults().unwrap();
         let (container_id, container_name, image_id) = create_and_start_container(&docker).await;
+
         // Test get_container_status
         let status = get_container_status(&container_name).await.unwrap();
         assert_eq!(status, "running", "Container should be in 'running' state");
         cleanup_container(&docker, &container_id, &image_id).await;
     }
+
     async fn cleanup_container(docker: &Docker, container_id: &str, image_id: &str) {
         // CLEANUP
         // We could "stop" container then "remove" container, but remove + force does this for us
@@ -330,6 +349,7 @@ CMD ["sleep", "infinity"]
             )
             .await
             .unwrap();
+
         docker
             .remove_image(
                 &image_id,
@@ -342,29 +362,38 @@ CMD ["sleep", "infinity"]
             .await
             .unwrap();
     }
+
     #[tokio::test]
     async fn test_keep_logging() {
         // pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<MetricsLog>>) {
         // Create a metrics log
         let metrics_log = MetricsLog::new();
+
         // Wrap it in a mutex ( enabling lock + unlock avoiding race condition )
         let metrics_log_mutex = Mutex::new(metrics_log);
+
         // Wrap in arc ( smart pointer, allows multiple mutable references )
         let shared_metrics_log = Arc::new(metrics_log_mutex);
+
         // Connect to docker
         let docker = Docker::connect_with_local_defaults().unwrap();
+
         // Create empty container
         let (container_id, container_name, image_id) = create_and_start_container(&docker).await;
+
         // Token to "cancel" keep logging
         let token = CancellationToken::new();
+
         // Allows for joining of multiple tasks, used because we have both bare-metal and docker
         // This joinset will have 1 item, so normally you wouldn't use one in this case
         // But this is a test so :shrug:
         let mut join_set = JoinSet::new();
+
         // Clone these values before moving them into the spawned task
         let task_token = token.clone();
         let task_metrics_log = shared_metrics_log.clone();
         let task_container_name = container_name.clone();
+
         // Spawn task ( async )
         join_set.spawn(async move {
             println!("starting to record metrics");
@@ -376,10 +405,13 @@ CMD ["sleep", "infinity"]
 
         // Create stop handle ( used to extract metrics log and cancel )
         let stop_handle = StopHandle::new(token, join_set, shared_metrics_log);
+
         // Wait for period of time ( to get logs)
         sleep(time::Duration::new(2, 0)).await;
+
         // Stop logging and get metrics_logs from keep_logging()
         let metrics_log = stop_handle.stop().await.unwrap();
+
         // Should have no errors & some metrics
         assert!(!metrics_log.has_errors());
         assert!(!metrics_log.get_metrics().is_empty());
@@ -387,6 +419,7 @@ CMD ["sleep", "infinity"]
             container_name,
             metrics_log.get_metrics().first().unwrap().process_name
         );
+
         // Cleanup
         cleanup_container(&docker, &container_id, &image_id).await;
     }
