@@ -13,7 +13,7 @@ use tracing::Level;
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
 pub struct Cli {
     #[arg(short, long)]
-    pub verbose: bool,
+    pub verbose: Option<bool>,
 
     #[arg(short, long)]
     pub file: Option<String>,
@@ -48,15 +48,30 @@ async fn main() -> anyhow::Result<()> {
     // Parse clap args
     let args = Cli::parse();
 
-    // Initialize tracing
-    let level = if args.verbose {
-        Level::DEBUG
-    } else {
-        Level::WARN
+    // Initialize config
+    // Open config file
+    let path = match &args.file {
+        Some(path) => Path::new(path),
+        None => Path::new("./cardamon.toml"),
     };
-    let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
-    tracing::subscriber::set_global_default(subscriber)?;
+    // Parse config
+    let config = config::Config::from_path(path)?;
 
+    // Set the debug level, prioritizing command-line args over config
+    let mut level = match config.debug_level.as_deref() {
+        Some("info") => Level::INFO,
+        Some("error") => Level::ERROR,
+        Some("warn") => Level::WARN,
+        Some("debug") => Level::DEBUG,
+        Some("trace") => Level::TRACE,
+        _ => Level::INFO,
+    };
+    if args.verbose.unwrap_or(false) {
+        level = Level::DEBUG;
+    }
+    let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
+    println!("Setting sub level to {level}");
+    tracing::subscriber::set_global_default(subscriber)?;
     match args.command {
         Commands::Run {
             name,
@@ -68,14 +83,7 @@ async fn main() -> anyhow::Result<()> {
             let pool = create_db().await?;
             let data_access_service = LocalDataAccessService::new(pool);
 
-            // open config file
-            let path = match &args.file {
-                Some(path) => Path::new(path),
-                None => Path::new("./cardamon.toml"),
-            };
-
             // create an execution plan
-            let config = config::Config::from_path(path)?;
             let mut execution_plan = if external_only {
                 config.create_execution_plan_external_only(&name)
             } else {
@@ -91,7 +99,6 @@ async fn main() -> anyhow::Result<()> {
                 execution_plan
                     .observe_external_process(ProcessToObserve::ContainerName(container_name));
             }
-
             // run it!
             let observation_dataset = run(execution_plan, &data_access_service).await?;
 
