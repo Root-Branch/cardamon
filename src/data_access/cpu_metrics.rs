@@ -7,7 +7,7 @@
 use anyhow::Context;
 use async_trait::async_trait;
 
-#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct CpuMetrics {
     pub run_id: String,
     pub process_id: String,
