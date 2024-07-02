@@ -224,6 +224,13 @@ pub async fn run<'a>(
         }
     }
 
+    // record the cardamon run
+    let start_time = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)?
+        .as_millis() as i64;
+    let mut run = data_access::run::Run::new(&run_id, start_time);
+    data_access_service.run_dao().persist(&run).await?;
+
     // ---- for each scenario ----
     for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
         // start the metrics loggers
@@ -258,6 +265,13 @@ pub async fn run<'a>(
         }
     }
     // ---- end for ----
+
+    // update run stop time
+    let stop_time = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)?
+        .as_millis() as i64;
+    run.stop(stop_time);
+    data_access_service.run_dao().persist(&run).await?;
 
     // stop the application
     shutdown_application(&exec_plan, &processes_to_observe)?;
@@ -361,7 +375,7 @@ mod tests {
                     assert!(proc.is_some());
                 }
 
-                thing => panic!("expected to find a process id"),
+                _ => panic!("expected to find a process id"),
             }
 
             Ok(())

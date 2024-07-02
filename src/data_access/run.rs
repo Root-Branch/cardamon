@@ -5,15 +5,19 @@ use async_trait::async_trait;
 pub struct Run {
     pub id: String,
     pub start_time: i64,
-    pub stop_time: i64,
+    pub stop_time: Option<i64>,
 }
 impl Run {
-    pub fn new(id: &str, start_time: i64, stop_time: i64) -> Self {
+    pub fn new(id: &str, start_time: i64) -> Self {
         Self {
             id: String::from(id),
             start_time,
-            stop_time,
+            stop_time: None,
         }
+    }
+
+    pub fn stop(&mut self, stop_time: i64) {
+        self.stop_time = Some(stop_time);
     }
 }
 
@@ -64,7 +68,10 @@ impl RunDao for LocalDao {
 
     async fn persist(&self, run: &Run) -> anyhow::Result<()> {
         sqlx::query!(
-            "INSERT INTO run (id, start_time, stop_time) VALUES (?1, ?2, ?3)",
+            r#"
+            INSERT INTO run (id, start_time, stop_time) VALUES (?1, ?2, ?3) 
+            ON CONFLICT(id) DO UPDATE SET start_time=excluded.start_time, stop_time=excluded.stop_time;
+            "#,
             run.id,
             run.start_time,
             run.stop_time

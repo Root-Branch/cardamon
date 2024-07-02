@@ -10,8 +10,11 @@ use scenario_iteration::ScenarioIterationDao;
 use sqlx::SqlitePool;
 use std::{fs, path};
 
+use self::run::RunDao;
+
 #[async_trait]
 pub trait DataAccessService: Send + Sync {
+    fn run_dao(&self) -> &dyn RunDao;
     fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao;
     fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao;
 
@@ -56,21 +59,28 @@ pub trait DataAccessService: Send + Sync {
 }
 
 pub struct LocalDataAccessService {
+    run_dao: run::LocalDao,
     scenario_iteration_dao: scenario_iteration::LocalDao,
     cpu_metrics_dao: cpu_metrics::LocalDao,
 }
 impl LocalDataAccessService {
     pub fn new(pool: SqlitePool) -> Self {
+        let run_dao = run::LocalDao::new(pool.clone());
         let scenario_iteration_dao = scenario_iteration::LocalDao::new(pool.clone());
         let cpu_metrics_dao = cpu_metrics::LocalDao::new(pool.clone());
 
         Self {
+            run_dao,
             scenario_iteration_dao,
             cpu_metrics_dao,
         }
     }
 }
 impl DataAccessService for LocalDataAccessService {
+    fn run_dao(&self) -> &dyn RunDao {
+        &self.run_dao
+    }
+
     fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao {
         &self.scenario_iteration_dao
     }
@@ -81,21 +91,28 @@ impl DataAccessService for LocalDataAccessService {
 }
 
 pub struct RemoteDataAccessService {
+    run_dao: run::RemoteDao,
     scenario_iteration_dao: scenario_iteration::RemoteDao,
     cpu_metrics_dao: cpu_metrics::RemoteDao,
 }
 impl RemoteDataAccessService {
     pub fn new(base_url: &str) -> Self {
+        let run_dao = run::RemoteDao::new(base_url);
         let scenario_iteration_dao = scenario_iteration::RemoteDao::new(base_url);
         let cpu_metrics_dao = cpu_metrics::RemoteDao::new(base_url);
 
         Self {
+            run_dao,
             scenario_iteration_dao,
             cpu_metrics_dao,
         }
     }
 }
 impl DataAccessService for RemoteDataAccessService {
+    fn run_dao(&self) -> &dyn RunDao {
+        &self.run_dao
+    }
+
     fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao {
         &self.scenario_iteration_dao
     }
