@@ -354,14 +354,15 @@ mod tests {
             assert_eq!(processes_to_observe.len(), 1);
 
             match processes_to_observe.first().expect("process should exist") {
-                ProcessToObserve::Pid(None, pid) => {
+                ProcessToObserve::Pid(name, pid) => {
                     let mut system = System::new();
                     system.refresh_all();
                     let proc = system.process(Pid::from_u32(*pid));
                     assert!(proc.is_some());
+                    assert!(proc.unwrap().name() == name.clone().unwrap());
                 }
 
-                _ => panic!("expected to find a process id"),
+                e => panic!("expected to find a process id {:?}", e),
             }
 
             Ok(())

@@ -5,16 +5,25 @@
  */
 
 use anyhow::Context;
-use serde::Deserialize;
-use std::{fs, io::Read};
+use regex::Regex;
+use reqwest;
+use scraper::{Html, Selector};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::{self, File},
+    io::{Read, Write},
+};
+use sysinfo::{CpuRefreshKind, RefreshKind, System};
+use url::form_urlencoded;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
     pub debug_level: Option<String>,
     pub metrics_server_url: Option<String>,
     pub processes: Vec<ProcessToExecute>,
     pub scenarios: Vec<Scenario>,
     pub observations: Vec<Observation>,
+    pub tdp: Option<u32>, // Not actually optional, will calculate TDP if no TDP is set
 }
 impl Config {
     pub fn from_path(path: &std::path::Path) -> anyhow::Result<Config> {
@@ -22,6 +31,69 @@ impl Config {
         fs::File::open(path)?.read_to_string(&mut config_str)?;
 
         toml::from_str::<Config>(&config_str).context("Error parsing config file.")
+    }
+    pub fn with_tdp(&mut self, tdp: u32) -> &mut Self {
+        self.tdp = Some(tdp);
+        self
+    }
+    pub fn config_to_file(path: &std::path::Path, config: Config) -> anyhow::Result<()> {
+        // Do *not* need to check if path exists, create_new will fail if file exists
+        let mut file = File::create_new(path)?;
+        let toml_string = toml::to_string(&config)?;
+        file.write_all(toml_string.as_bytes())?;
+        Ok(())
+    }
+    #[cfg(unix)]
+    pub fn default() -> Self {
+        Config {
+            debug_level: Some("info".to_string()),
+            metrics_server_url: None,
+            processes: vec![ProcessToExecute {
+                name: "test".to_string(),
+                up: "bash -c \"while true; do shuf -i 0-1337 -n 1; done\"".to_string(),
+                down: Some("kill {pid}".to_string()),
+                redirect: Some(Redirect::File),
+                process: ProcessType::BareMetal,
+            }],
+            scenarios: vec![Scenario {
+                name: "basket_10".to_string(),
+                desc: "add 10 items to the basket".to_string(),
+                command: "sleep 15".to_string(),
+                iterations: 2,
+                processes: vec!["test".to_string()],
+            }],
+            observations: vec![Observation {
+                name: "obs_1".to_string(),
+                scenarios: vec!["basket_10".to_string()],
+            }],
+            tdp: None,
+        }
+    }
+    #[cfg(windows)]
+    pub fn default() -> Self {
+        Config {
+            debug_level: Some("info".to_string()),
+            metrics_server_url: None,
+            processes: vec![ProcessToExecute {
+                name: "test".to_string(),
+                up: "powershell while($true) { get-random}".to_string(),
+                down: Some("stop-process {pid}".to_string()),
+                redirect: Some(Redirect::Null),
+                process: ProcessType::BareMetal,
+            }],
+            scenarios: vec![Scenario {
+                name: "basket_10".to_string(),
+                desc: "Adds ten items to the basket".to_string(),
+                command: "powershell sleep 15".to_string(),
+                iterations: 2,
+                processes: vec!["test".to_string()],
+            }],
+            observations: vec![Observation {
+                name: "obs_1".to_string(),
+                scenarios: vec!["basket_10".to_string()],
+            }],
+            tdp: None,
+        }
     }
 
     fn find_observation(&self, observation_name: &str) -> Option<&Observation> {
@@ -130,7 +202,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Deserialize, PartialEq, Clone, Copy, Serialize)]
 #[serde(tag = "to", rename_all = "lowercase")]
 pub enum Redirect {
     Null,
@@ -138,7 +210,7 @@ pub enum Redirect {
     File,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Scenario {
     pub name: String,
     pub desc: String,
@@ -157,14 +229,14 @@ impl Scenario {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ProcessType {
     BareMetal,
     Docker { containers: Vec<String> },
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProcessToExecute {
     pub name: String,
     pub up: String,
@@ -193,7 +265,7 @@ impl<'a> ScenarioToExecute<'a> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Observation {
     pub name: String,
     pub scenarios: Vec<String>,
@@ -365,7 +437,57 @@ mod tests {
 
         Ok(())
     }
+    #[test]
+    fn test_cpu_name_transformations() {
+        let test_cases = vec![
+            ("AMD Ryzen 7 5800X 8-Core Processor", true, "Ryzen 7 5800X"),
+            (
+                "Intel(R) Core(TM) i7-7700U CPU @ 2.80GHz",
+                true,
+                "Core i7-7700U",
+            ),
+            (
+                "Intel(R) Core(TM) i7-13700K CPU @ 2.80GHz",
+                true,
+                "Core i7-13700K",
+            ),
+            (
+                "Intel(R) Xeon(R) CPU E5-2670 v3 @ 2.30GHz",
+                true,
+                "Xeon E5-2670",
+            ),
+            ("AMD EPYC 7742 64-Core Processor", true, "EPYC 7742"),
+            ("Unknown CPU Model XYZ", false, "Unknown CPU Model XYZ"),
+            ("", false, ""),
+            (
+                "Intel(R) Core(TM) i5-9400 CPU @ 2.90GHz",
+                true,
+                "Core i5-9400",
+            ),
+            ("AMD Ryzen 9 5950X 16-Core Processor", true, "Ryzen 9 5950X"),
+            (
+                "Intel(R) Xeon(R) Platinum 8272 CPU @ 2.60Ghz",
+                true,
+                "Xeon Platinum 8272",
+            ),
+            (
+                "Intel(R) Xeon(R) w7-3445 Processor @ 3.70Ghz",
+                true,
+                "Xeon w7-3445",
+            ),
+            ("Intel(R) Xeon(R) w7-3445 Processor", true, "Xeon w7-3445"),
+        ];
 
+        for (input, should_transform, expected) in test_cases {
+            let (transformed, result) = transform_cpu_name(input);
+            assert_eq!(
+                transformed, should_transform,
+                "Transformation flag mismatch for input: {} , expected- {}, got - {result}",
+                input, expected
+            );
+            assert_eq!(result, expected, "Unexpected result for input: {}", input);
+        }
+    }
     // #[test]
     // fn can_create_scenarios_to_run_for_obs() -> anyhow::Result<()> {
     //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
@@ -411,4 +533,163 @@ mod tests {
     //
     //     Ok(())
     // }
+}
+fn transform_cpu_name(input: &str) -> (bool, String) {
+    if input.is_empty() {
+        return (false, String::new());
+    }
+
+    let amd_ryzen_regex = Regex::new(r"AMD (Ryzen \d+ \d+[A-Z]+)").unwrap();
+    let amd_epyc_regex = Regex::new(r"AMD (EPYC \d+)").unwrap();
+    let intel_core_regex = Regex::new(r"Intel\(R\) Core\(TM\) (i\d+-\d+[A-Z]*)").unwrap();
+    let intel_xeon_regex = Regex::new(r"Intel(?:®|\(R\)) Xeon(?:®|\(R\)) (?:CPU )?(?:Processor )?((?:Platinum |Gold |Silver |[A-Za-z])\d+(?:-\d+)?)").unwrap();
+
+    if let Some(captures) = amd_ryzen_regex.captures(input) {
+        (true, captures[1].to_string())
+    } else if let Some(captures) = amd_epyc_regex.captures(input) {
+        (true, captures[1].to_string())
+    } else if let Some(captures) = intel_core_regex.captures(input) {
+        (true, format!("Core {}", &captures[1]))
+    } else if let Some(captures) = intel_xeon_regex.captures(input) {
+        (true, format!("Xeon {}", &captures[1]))
+    } else {
+        (false, input.to_string())
+    }
+}
+pub async fn calculate_tdp() -> anyhow::Result<u32> {
+    let s = System::new_with_specifics(RefreshKind::new().with_cpu(CpuRefreshKind::everything()));
+    let cpu_name = {
+        if s.cpus().len() != 0 {
+            Some(s.cpus()[0].brand().to_string())
+        } else {
+            None
+        }
+    };
+    let cpu_name = match cpu_name {
+        Some(name) => name,
+        None => {
+            println!("Could not find CPU automatically, please input CPU name:");
+            let mut input = String::new();
+            std::io::stdin()
+                .read_line(&mut input)
+                .context("Failed to read user input")?;
+            input
+        }
+    };
+    // CPU names come out as "Intel Core I-7600U .....
+    // and AMD Ryzen 7 5800X 8-Core Processor
+    // We want Core i-7700U , and Ryzen 7 5800X
+    // We need to strip this for the api
+    let (regex_worked, cpu_name) = transform_cpu_name(&cpu_name);
+    if !regex_worked {
+        println!("Regex CPU-Parsing did not work, possible manual intervention required");
+    }
+    println!("Detected CPU: {}", cpu_name);
+
+    let encoded_cpu_name = form_urlencoded::byte_serialize(cpu_name.as_bytes()).collect::<String>();
+    let url = format!(
+        "https://www.techpowerup.com/cpu-specs/?ajaxsrch={}",
+        encoded_cpu_name
+    );
+
+    let response = reqwest::get(&url).await?.text().await?;
+    let document = Html::parse_document(&response);
+
+    let row_selector = Selector::parse("table.processors tr")
+        .map_err(|e| anyhow::anyhow!("Failed to parse row selector: {}", e))?;
+    let rows: Vec<_> = document.select(&row_selector).skip(1).collect();
+
+    if rows.is_empty() {
+        println!("No CPU information found for CPU {}", cpu_name);
+        return ask_for_manual_tdp();
+    }
+
+    let tdp = if rows.len() == 1 {
+        let tdp = extract_tdp(&rows[0])?;
+        let cpu_name = extract_cpu_name(&rows[0])?;
+        println!("Found CPU: {}", cpu_name);
+        println!("TDP: {} W", tdp);
+        println!("Is this correct? (y/n)");
+
+        let mut input = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .context("Failed to read user input")?;
+
+        if input.trim().to_lowercase() == "y" {
+            tdp
+        } else {
+            ask_for_manual_tdp()?
+        }
+    } else {
+        println!("Multiple CPUs found. Please choose one:");
+        for (i, row) in rows.iter().enumerate() {
+            println!("{}. {}", i + 1, extract_cpu_name(row)?);
+        }
+
+        let choice = loop {
+            println!("Enter the number of your CPU or 'm' for manual TDP entry:");
+            let mut input = String::new();
+            std::io::stdin()
+                .read_line(&mut input)
+                .context("Failed to read user input")?;
+
+            if input.trim().to_lowercase() == "m" {
+                return Ok(ask_for_manual_tdp()?);
+            }
+
+            if let Ok(num) = input.trim().parse::<usize>() {
+                if num > 0 && num <= rows.len() {
+                    break num - 1;
+                }
+            }
+            println!("Invalid input. Please try again.");
+        };
+
+        extract_tdp(&rows[choice])?
+    };
+
+    Ok(tdp)
+}
+
+fn extract_cpu_name(row: &scraper::element_ref::ElementRef) -> anyhow::Result<String> {
+    let name_selector = Selector::parse("td:first-child")
+        .map_err(|e| anyhow::anyhow!("Failed to parse name selector: {}", e))?;
+    Ok(row
+        .select(&name_selector)
+        .next()
+        .context("CPU name not found")?
+        .text()
+        .collect::<String>())
+}
+
+fn extract_tdp(row: &scraper::element_ref::ElementRef) -> anyhow::Result<u32> {
+    let tdp_selector = Selector::parse("td:nth-child(8)")
+        .map_err(|e| anyhow::anyhow!("Failed to parse TDP selector: {}", e))?;
+    let tdp_text = row
+        .select(&tdp_selector)
+        .next()
+        .context("TDP not found")?
+        .text()
+        .collect::<String>();
+    tdp_text
+        .trim()
+        .replace(" W", "")
+        .parse::<u32>()
+        .context("Failed to parse TDP")
+}
+
+fn ask_for_manual_tdp() -> anyhow::Result<u32> {
+    loop {
+        println!("Please enter the TDP manually (in watts):");
+        let mut input = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .context("Failed to read user input")?;
+
+        match input.trim().parse::<u32>() {
+            Ok(tdp) => return Ok(tdp),
+            Err(_) => println!("Invalid input. Please enter a valid number."),
+        }
+    }
 }

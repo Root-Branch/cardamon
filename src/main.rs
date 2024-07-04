@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use cardamon::{
-    config::{self, ProcessToObserve},
+    config::{self, calculate_tdp, ProcessToObserve},
     data_access::LocalDataAccessService,
     run,
 };
@@ -41,6 +41,10 @@ pub enum Commands {
         #[arg(long)]
         external_only: bool,
     },
+    Init {
+        #[arg(long, value_name = "TDP")]
+        tdp: Option<u32>,
+    },
 }
 
 #[tokio::main]
@@ -48,37 +52,63 @@ async fn main() -> anyhow::Result<()> {
     // Parse clap args
     let args = Cli::parse();
 
-    // Initialize config
-    // Open config file
-    let path = match &args.file {
-        Some(path) => Path::new(path),
-        None => Path::new("./cardamon.toml"),
+    // Initialize config if it exists
+    let config = match &args.file {
+        Some(path) => config::Config::from_path(Path::new(path)).ok(),
+        None => config::Config::from_path(Path::new("./cardamon.toml")).ok(),
     };
-    // Parse config
-    let config = config::Config::from_path(path)?;
 
     // Set the debug level, prioritizing command-line args over config
-    let mut level = match config.debug_level.as_deref() {
-        Some("info") => Level::INFO,
-        Some("error") => Level::ERROR,
-        Some("warn") => Level::WARN,
-        Some("debug") => Level::DEBUG,
-        Some("trace") => Level::TRACE,
-        _ => Level::INFO,
+    let level = if args.verbose.unwrap_or(false) {
+        Level::DEBUG
+    } else {
+        match &config {
+            Some(cfg) => match cfg.debug_level.as_deref() {
+                Some("info") => Level::INFO,
+                Some("error") => Level::ERROR,
+                Some("warn") => Level::WARN,
+                Some("debug") => Level::DEBUG,
+                Some("trace") => Level::TRACE,
+                _ => Level::INFO,
+            },
+            None => Level::INFO,
+        }
     };
-    if args.verbose.unwrap_or(false) {
-        level = Level::DEBUG;
-    }
+
+    // Set up tracing subscriber
     let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
-    println!("Setting sub level to {level}");
     tracing::subscriber::set_global_default(subscriber)?;
+
     match args.command {
+        Commands::Init { tdp } => {
+            let path = Path::new("./cardamon.toml");
+            if path.exists() {
+                anyhow::bail!(
+                    "Cardamon.toml exists, please remove cardamon.toml before starting program"
+                )
+            }
+            let tdp = match tdp {
+                Some(tdp) => tdp,
+                None => calculate_tdp().await?,
+            };
+            let mut config = config::Config::default();
+            config.tdp = Some(tdp);
+            config::Config::config_to_file(path, config)?;
+            println!("Wrote default config to cardamon.toml with TDP {tdp}");
+            return Ok(());
+        }
         Commands::Run {
             name,
             pids,
             containers,
             external_only,
         } => {
+            // Ensure we have a config for the Run command
+            let config = match config {
+                Some(cfg) => cfg,
+                None => return Err(anyhow::anyhow!("No config file found for Run command")),
+            };
+
             // set up local data access
             let pool = create_db().await?;
             let data_access_service = LocalDataAccessService::new(pool);
@@ -91,11 +121,11 @@ async fn main() -> anyhow::Result<()> {
             }?;
 
             // add external processes to observe.
-            for pid in pids.unwrap_or(vec![]) {
+            for pid in pids.unwrap_or_default() {
                 let pid = pid.parse::<u32>()?;
                 execution_plan.observe_external_process(ProcessToObserve::Pid(None, pid));
             }
-            for container_name in containers.unwrap_or(vec![]) {
+            for container_name in containers.unwrap_or_default() {
                 execution_plan
                     .observe_external_process(ProcessToObserve::ContainerName(container_name));
             }
@@ -119,7 +149,6 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 async fn create_db() -> anyhow::Result<SqlitePool> {
     let db_url = "sqlite://cardamon.db";
     if !sqlx::Sqlite::database_exists(db_url).await? {
