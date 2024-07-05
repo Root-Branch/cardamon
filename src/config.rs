@@ -29,8 +29,10 @@ impl Config {
     pub fn from_path(path: &std::path::Path) -> anyhow::Result<Config> {
         let mut config_str = String::new();
         fs::File::open(path)?.read_to_string(&mut config_str)?;
-
-        toml::from_str::<Config>(&config_str).context("Error parsing config file.")
+        // Not verbose, gives "Error parsing config file" and no more context
+        //toml::from_str::<Config>(&config_str).context("Error parsing config file.")
+        toml::from_str::<Config>(&config_str)
+            .map_err(|e| anyhow::anyhow!("TOML parsing error: {}", e))
     }
     pub fn with_tdp(&mut self, tdp: u32) -> &mut Self {
         self.tdp = Some(tdp);
@@ -48,13 +50,27 @@ impl Config {
         Config {
             debug_level: Some("info".to_string()),
             metrics_server_url: None,
-            processes: vec![ProcessToExecute {
-                name: "test".to_string(),
-                up: "bash -c \"while true; do shuf -i 0-1337 -n 1; done\"".to_string(),
-                down: Some("kill {pid}".to_string()),
-                redirect: Some(Redirect::File),
-                process: ProcessType::BareMetal,
-            }],
+            processes: vec![
+                ProcessToExecute {
+                    name: "test".to_string(),
+                    up: "bash -c \"while true; do shuf -i 0-1337 -n 1; done\"".to_string(),
+                    down: Some("kill {pid}".to_string()),
+                    redirect: Some(Redirect::File),
+                    process: ProcessType::BareMetal,
+                },
+                ProcessToExecute {
+                    name: "test".to_string(),
+                    up: "bash -c \"while true; do shuf -i 0-1337 -n 1; done\"".to_string(),
+                    down: Some("kill {pid}".to_string()),
+                    redirect: Some(Redirect::File),
+                    process: ProcessType::Docker {
+                        containers: vec![
+                            "container_name_1".to_string(),
+                            "container_name_2".to_string(),
+                        ],
+                    },
+                },
+            ],
             scenarios: vec![Scenario {
                 name: "basket_10".to_string(),
                 desc: "add 10 items to the basket".to_string(),

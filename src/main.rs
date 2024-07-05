@@ -54,8 +54,15 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize config if it exists
     let config = match &args.file {
-        Some(path) => config::Config::from_path(Path::new(path)).ok(),
-        None => config::Config::from_path(Path::new("./cardamon.toml")).ok(),
+        Some(path) => config::Config::from_path(Path::new(path)),
+        None => config::Config::from_path(Path::new("./cardamon.toml")),
+    };
+    let config = match config {
+        Ok(cfg) => Some(cfg),
+        Err(e) => {
+            eprintln!("Error loading configuration: {}", e);
+            None
+        }
     };
 
     // Set the debug level, prioritizing command-line args over config
