@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context};
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
 use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
-use std::{fs::File, path::Path, time};
+use std::{fs::File, path::Path, time, vec};
 use subprocess::{Exec, NullFile, Redirection};
 use tracing::info;
 
@@ -104,12 +104,10 @@ async fn run_scenario<'a>(
         .as_millis();
 
     // Split the scenario_command into a vector
-    let command_parts: Vec<&str> = scenario_to_execute
-        .scenario
-        .command
-        .split_whitespace()
-        .collect();
-
+    let command_parts = match shlex::split(&scenario_to_execute.scenario.command) {
+        Some(command) => command,
+        None => vec!["error".to_string()],
+    };
     // Get the command and arguments
     let command = command_parts
         .first()
