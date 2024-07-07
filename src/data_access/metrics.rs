@@ -2,46 +2,44 @@ use anyhow::Context;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
-pub struct CpuMetrics {
+pub struct Metrics {
     pub run_id: String,
     pub process_id: String,
     pub process_name: String,
     pub cpu_usage: f64,
-    pub total_usage: f64,
-    pub core_count: i64,
+    pub cpu_total_usage: f64,
+    pub cpu_core_count: i64,
     pub time_stamp: i64,
 }
-impl CpuMetrics {
+impl Metrics {
     pub fn new(
         run_id: &str,
         process_id: &str,
         process_name: &str,
         cpu_usage: f64,
-        total_usage: f64,
-        core_count: i64,
+        cpu_total_usage: f64,
+        cpu_core_count: i64,
         time_stamp: i64,
     ) -> Self {
-        CpuMetrics {
+        Metrics {
             run_id: String::from(run_id),
             process_id: String::from(process_id),
             process_name: String::from(process_name),
             cpu_usage,
-            total_usage,
-            core_count,
+            cpu_total_usage,
+            cpu_core_count,
             time_stamp,
         }
     }
 }
 
 #[async_trait]
-pub trait CpuMetricsDao {
-    async fn fetch_within(
-        &self,
-        run_id: &str,
-        begin: i64,
-        end: i64,
-    ) -> anyhow::Result<Vec<CpuMetrics>>;
-    async fn persist(&self, model: &CpuMetrics) -> anyhow::Result<()>;
+pub trait MetricsDao {
+    /// Return the metrics for the given run within the given time range.
+    async fn fetch_within(&self, run: &str, from: i64, to: i64) -> anyhow::Result<Vec<Metrics>>;
+
+    /// Persist a metrics object to the db.
+    async fn persist(&self, metrics: &Metrics) -> anyhow::Result<()>;
 }
 
 // //////////////////////////////////////
@@ -56,42 +54,45 @@ impl LocalDao {
     }
 }
 #[async_trait]
-impl CpuMetricsDao for LocalDao {
-    async fn fetch_within(
-        &self,
-        run_id: &str,
-        begin: i64,
-        end: i64,
-    ) -> anyhow::Result<Vec<CpuMetrics>> {
+impl MetricsDao for LocalDao {
+    async fn fetch_within(&self, run: &str, from: i64, to: i64) -> anyhow::Result<Vec<Metrics>> {
         sqlx::query_as!(
-            CpuMetrics,
-            r#"
-            SELECT * FROM cpu_metrics WHERE run_id = ?1 AND time_stamp >= ?2 AND time_stamp <= ?3
-            "#,
-            run_id,
-            begin,
-            end
+            Metrics,
+            "SELECT * FROM metrics WHERE run_id = ?1 AND time_stamp >= ?2 AND time_stamp <= ?3",
+            run,
+            from,
+            to
         )
         .fetch_all(&self.pool)
         .await
         .context("Error fetching cpu metrics from db.")
     }
 
-    async fn persist(&self, metrics: &CpuMetrics) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, time_stamp) \
-                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", 
+    async fn persist(&self, metrics: &Metrics) -> anyhow::Result<()> {
+        sqlx::query!(
+            r#"
+            INSERT INTO metrics (
+                run_id, 
+                process_id, 
+                process_name, 
+                cpu_usage, 
+                cpu_total_usage, 
+                cpu_core_count, 
+                time_stamp
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"#,
             metrics.run_id,
             metrics.process_id,
             metrics.process_name,
             metrics.cpu_usage,
-            metrics.total_usage,
-            metrics.core_count,
+            metrics.cpu_total_usage,
+            metrics.cpu_core_count,
             metrics.time_stamp
         )
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .context("Error inserting cpu metrics into db.")
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .context("Error inserting cpu metrics into db.")
     }
 }
 
@@ -112,28 +113,28 @@ impl RemoteDao {
     }
 }
 #[async_trait]
-impl CpuMetricsDao for RemoteDao {
+impl MetricsDao for RemoteDao {
     async fn fetch_within(
         &self,
         run_id: &str,
         begin: i64,
         end: i64,
-    ) -> anyhow::Result<Vec<CpuMetrics>> {
+    ) -> anyhow::Result<Vec<Metrics>> {
         self.client
             .get(format!(
-                "{}/cpu_metrics/{run_id}?begin={begin}&end={end}",
+                "{}/metrics/{run_id}?begin={begin}&end={end}",
                 self.base_url
             ))
             .send()
             .await?
-            .json::<Vec<CpuMetrics>>()
+            .json::<Vec<Metrics>>()
             .await
             .context("Error fetching cpu metrics with id {id} from remote server")
     }
 
-    async fn persist(&self, metrics: &CpuMetrics) -> anyhow::Result<()> {
+    async fn persist(&self, metrics: &Metrics) -> anyhow::Result<()> {
         self.client
-            .post(format!("{}/cpu_metrics", self.base_url))
+            .post(format!("{}/metrics", self.base_url))
             .json(metrics)
             .send()
             .await?
@@ -151,7 +152,7 @@ mod tests {
 
     #[sqlx::test(
         migrations = "./migrations",
-        fixtures("../../fixtures/runs.sql", "../../fixtures/cpu_metrics.sql")
+        fixtures("../../fixtures/runs.sql", "../../fixtures/metrics.sql")
     )]
     async fn local_cpu_metrics_fetch_within(pool: sqlx::SqlitePool) -> anyhow::Result<()> {
         let metrics_service = LocalDao::new(pool.clone());

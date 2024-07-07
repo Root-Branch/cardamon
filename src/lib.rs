@@ -6,8 +6,8 @@ pub mod metrics_logger;
 
 use anyhow::{anyhow, Context};
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
-use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
-use dataset::ObservationDataset;
+use data_access::{iteration::Iteration, DAOService};
+use dataset::{Dataset, DatasetBuilder};
 use std::{fs::File, path::Path, time};
 use subprocess::{Exec, NullFile, Redirection};
 use tracing::info;
@@ -98,7 +98,7 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
 async fn run_scenario<'a>(
     run_id: &str,
     scenario_to_execute: &ScenarioToExecute<'a>,
-) -> anyhow::Result<ScenarioIteration> {
+) -> anyhow::Result<Iteration> {
     let start = time::SystemTime::now()
         .duration_since(time::UNIX_EPOCH)?
         .as_millis();
@@ -134,7 +134,7 @@ async fn run_scenario<'a>(
             .duration_since(time::UNIX_EPOCH)?
             .as_millis();
 
-        let scenario_iteration = ScenarioIteration::new(
+        let scenario_iteration = Iteration::new(
             run_id,
             &scenario_to_execute.scenario.name,
             scenario_to_execute.iteration as i64,
@@ -209,8 +209,8 @@ fn shutdown_application(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
-    data_access_service: &dyn DataAccessService,
-) -> anyhow::Result<ObservationDataset> {
+    dao_service: &dyn DAOService,
+) -> anyhow::Result<Dataset> {
     // create a unique cardamon run id
     let run_id = nanoid::nanoid!(5);
 
@@ -225,11 +225,11 @@ pub async fn run<'a>(
     }
 
     // record the cardamon run
-    let start_time = time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)?
-        .as_millis() as i64;
-    let mut run = data_access::run::Run::new(&run_id, start_time);
-    data_access_service.run_dao().persist(&run).await?;
+    // let start_time = time::SystemTime::now()
+    //     .duration_since(time::UNIX_EPOCH)?
+    //     .as_millis() as i64;
+    // let mut run = data_access::run::Run::new(&run_id, start_time);
+    // dao_service.runs().persist(&run).await?;
 
     // ---- for each scenario ----
     for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
@@ -252,14 +252,14 @@ pub async fn run<'a>(
         }
 
         // write scenario and metrics to db
-        data_access_service
-            .scenario_iteration_dao()
+        dao_service
+            .iterations()
             .persist(&scenario_iteration)
             .await?;
 
         for metrics in metrics_log.get_metrics() {
-            data_access_service
-                .cpu_metrics_dao()
+            dao_service
+                .metrics()
                 .persist(&metrics.into_data_access(&run_id))
                 .await?;
         }
@@ -267,23 +267,30 @@ pub async fn run<'a>(
     // ---- end for ----
 
     // update run stop time
-    let stop_time = time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)?
-        .as_millis() as i64;
-    run.stop(stop_time);
-    data_access_service.run_dao().persist(&run).await?;
+    // let stop_time = time::SystemTime::now()
+    //     .duration_since(time::UNIX_EPOCH)?
+    //     .as_millis() as i64;
+    // run.stop(stop_time);
+    // dao_service.runs().persist(&run).await?;
 
     // stop the application
     shutdown_application(&exec_plan, &processes_to_observe)?;
 
     // create a summary to return to the user
-    let scenario_names = exec_plan.scenario_names();
-    let previous_runs = 3;
-    let observation_dataset = data_access_service
-        .fetch_observation_dataset(scenario_names, previous_runs)
-        .await?;
+    // let scenario_names = exec_plan.scenario_names();
+    // let previous_runs = 3;
+    // let observation_dataset = dao_service
+    //     .fetch_observation_dataset(scenario_names, previous_runs)
+    //     .await?;
+    //
+    // Ok(observation_dataset)
 
-    Ok(observation_dataset)
+    // create a dataset containing the data just collected
+    DatasetBuilder::new(dao_service)
+        .scenarios_in_run(&run_id)
+        .all()
+        .last_n_runs(3)
+        .await
 }
 
 #[cfg(test)]

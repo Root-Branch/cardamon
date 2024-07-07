@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use cardamon::data_access::{cpu_metrics::CpuMetrics, scenario_iteration::ScenarioIteration};
+use cardamon::data_access::{iteration::Iteration, metrics::Metrics};
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use tracing::instrument;
@@ -63,7 +63,7 @@ pub async fn fetch_within(
     Path(run_id): Path<String>,
     Query(params): Query<WithinParams>,
     State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<Vec<CpuMetrics>>, ServerError> {
+) -> anyhow::Result<Json<Vec<Metrics>>, ServerError> {
     let begin = params.begin.unwrap_or(0);
     let end = params.end.unwrap_or_else(|| Utc::now().timestamp());
 
@@ -90,10 +90,10 @@ async fn fetch_metrics_within_range(
     run_id: &str,
     begin: i64,
     end: i64,
-) -> Result<Vec<CpuMetrics>, sqlx::Error> {
+) -> Result<Vec<Metrics>, sqlx::Error> {
     let metrics = sqlx::query_as!(
-        CpuMetrics,
-        "SELECT * FROM cpu_metrics WHERE run_id = ? AND time_stamp BETWEEN ? AND ?",
+        Metrics,
+        "SELECT * FROM metrics WHERE run_id = ? AND time_stamp BETWEEN ? AND ?",
         run_id,
         begin,
         end
@@ -105,7 +105,7 @@ async fn fetch_metrics_within_range(
 #[instrument(name = "Persist metrics into database")]
 pub async fn persist_metrics(
     State(pool): State<SqlitePool>,
-    Json(payload): Json<CpuMetrics>,
+    Json(payload): Json<Metrics>,
 ) -> anyhow::Result<String, ServerError> {
     tracing::debug!("Received payload: {:?}", payload);
     insert_metrics_into_db(&pool, &payload).await.map_err(|e| {
@@ -116,18 +116,15 @@ pub async fn persist_metrics(
     Ok("Metrics persisted".to_string())
 }
 
-async fn insert_metrics_into_db(
-    pool: &SqlitePool,
-    metrics: &CpuMetrics,
-) -> Result<(), sqlx::Error> {
+async fn insert_metrics_into_db(pool: &SqlitePool, metrics: &Metrics) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, time_stamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO metrics (run_id, process_id, process_name, cpu_usage, cpu_total_usage, cpu_core_count, time_stamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
         metrics.run_id,
         metrics.process_id,
         metrics.process_name,
         metrics.cpu_usage,
-        metrics.total_usage,
-        metrics.core_count,
+        metrics.cpu_total_usage,
+        metrics.cpu_core_count,
         metrics.time_stamp
     )
     .execute(pool)
@@ -175,7 +172,7 @@ async fn insert_metrics_into_db(
 #[instrument(name = "Fetch last scenario_iteration")]
 pub async fn scenario_iteration_fetch_last(
     State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<ScenarioIteration>, ServerError> {
+) -> anyhow::Result<Json<Iteration>, ServerError> {
     tracing::debug!("Received request to fetch last scenario run");
 
     let scenario_iteration = fetch_last_scenario_iteration(&pool).await.map_err(|e| {
@@ -190,7 +187,7 @@ pub async fn scenario_iteration_fetch_last(
 #[instrument(name = "Persist scenario iteration")]
 pub async fn scenario_iteration_persist(
     State(pool): State<SqlitePool>,
-    Json(payload): Json<ScenarioIteration>,
+    Json(payload): Json<Iteration>,
 ) -> anyhow::Result<String, ServerError> {
     tracing::debug!("Received payload: {:?}", payload);
 
@@ -206,12 +203,10 @@ pub async fn scenario_iteration_persist(
 }
 
 #[inline]
-async fn fetch_last_scenario_iteration(
-    pool: &SqlitePool,
-) -> Result<ScenarioIteration, sqlx::Error> {
+async fn fetch_last_scenario_iteration(pool: &SqlitePool) -> Result<Iteration, sqlx::Error> {
     let scenario_iteration = sqlx::query_as!(
-        ScenarioIteration,
-        "SELECT * FROM scenario_iteration ORDER BY start_time DESC LIMIT 1"
+        Iteration,
+        "SELECT * FROM iteration ORDER BY start_time DESC LIMIT 1"
     )
     .fetch_one(pool)
     .await?;
@@ -220,10 +215,10 @@ async fn fetch_last_scenario_iteration(
 
 async fn insert_scenario_iteration_into_db(
     pool: &SqlitePool,
-    scenario_iteration: &ScenarioIteration,
+    scenario_iteration: &Iteration,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO scenario_iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?, ?, ?, ?, ?)",
         scenario_iteration.run_id,
         scenario_iteration.scenario_name,
         scenario_iteration.iteration,

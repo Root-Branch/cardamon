@@ -6,7 +6,10 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use cardamon::data_access::{cpu_metrics::CpuMetrics, scenario_iteration::ScenarioIteration};
+use cardamon::{
+    data_access::{iteration::Iteration, metrics::Metrics, DAOService},
+    dataset::DatasetBuilder,
+};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use sqlx::SqlitePool;
 use tracing::{info, instrument};
@@ -51,6 +54,8 @@ pub async fn get_runs(
         None => 0,
     };
 
+    // Get runs between these
+
     // Get each iteration
     let scenario_iterations =
         fetch_scenario_iteration_within_range(&pool, start_timestamp, end_timestamp)
@@ -61,14 +66,14 @@ pub async fn get_runs(
             })?;
 
     // Fetch all CPU metrics for these run_ids in a single query
-    let all_cpu_metrics = fetch_metrics_for_multiple_runs(&pool, start_timestamp, end_timestamp)
+    let all_metrics = fetch_metrics_for_multiple_runs(&pool, start_timestamp, end_timestamp)
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch CPU metrics from database {:?}", e);
             ServerError::DatabaseError(e)
         })?;
     let now = SystemTime::now();
-    let mapped_iterations = create_scenario_metrics_vec(scenario_iterations, all_cpu_metrics);
+    let mapped_iterations = create_scenario_metrics_vec(scenario_iterations, all_metrics);
     let mut data: Vec<Runs> = Vec::new();
 
     for (iteration, metrics) in mapped_iterations {
@@ -125,35 +130,48 @@ pub async fn get_runs(
 }
 
 fn create_scenario_metrics_vec(
-    scenario_iterations: Vec<ScenarioIteration>,
-    all_cpu_metrics: Vec<CpuMetrics>,
-) -> Vec<(ScenarioIteration, Vec<CpuMetrics>)> {
-    scenario_iterations
+    iterations: Vec<Iteration>,
+    all_metrics: Vec<Metrics>,
+) -> Vec<(Iteration, Vec<Metrics>)> {
+    iterations
         .into_iter()
-        .map(|scenario| {
-            let matching_metrics = all_cpu_metrics
+        .map(|it| {
+            let matching_metrics = all_metrics
                 .iter()
                 .filter(|metric| {
-                    metric.time_stamp >= scenario.start_time
-                        && metric.time_stamp <= scenario.stop_time
+                    metric.time_stamp >= it.start_time && metric.time_stamp <= it.stop_time
                 })
                 .cloned()
                 .collect();
-            (scenario, matching_metrics)
+            (it, matching_metrics)
         })
         .collect()
 }
 
 async fn fetch_metrics_for_multiple_runs(
-    pool: &SqlitePool,
-    begin: i64,
-    end: i64,
-) -> Result<Vec<CpuMetrics>, sqlx::Error> {
+    dao_service: &dyn DAOService,
+    from: i64,
+    to: i64,
+    scenario: &str,
+    page_size: u32,
+    page_num: u32,
+) -> Result<Vec<Metrics>, sqlx::Error> {
+    let dataset = DatasetBuilder::new(&dao_service)
+        .scenario(scenario)
+        .runs_in_range(from, to)
+        .page(page_size, page_num)
+        .await?;
+
+    let scenario_datasets = dataset.by_scenario();
+    for scenario_dataset in scenario_datasets {
+        let run_datasets = scenario_dataset.by_run();
+    }
+
     let metrics = sqlx::query_as!(
-        CpuMetrics,
-        "SELECT * FROM cpu_metrics WHERE time_stamp BETWEEN ? AND ?",
-        begin,
-        end
+        Metrics,
+        "SELECT * FROM metrics WHERE time_stamp BETWEEN ? AND ?",
+        from,
+        to
     )
     .fetch_all(pool)
     .await?;
@@ -162,14 +180,14 @@ async fn fetch_metrics_for_multiple_runs(
 
 async fn fetch_scenario_iteration_within_range(
     pool: &SqlitePool,
-    begin: i64,
-    end: i64,
-) -> Result<Vec<ScenarioIteration>, sqlx::Error> {
+    from: i64,
+    to: i64,
+) -> Result<Vec<Iteration>, sqlx::Error> {
     let runs = sqlx::query_as!(
-        ScenarioIteration,
-        "SELECT * FROM scenario_iteration WHERE start_time >= ? AND stop_time <= ?",
-        begin,
-        end
+        Iteration,
+        "SELECT * FROM iteration WHERE start_time >= ? AND stop_time <= ?",
+        from,
+        to
     )
     .fetch_all(pool)
     .await?;
@@ -289,7 +307,7 @@ pub async fn get_metrics(
 
 #[utoipa::path(
     get,
-    path = "/api/cpu-metrics",
+    path = "/api/metrics",
     params(
         ("startDate" = Option<String>, Query, description = "Start date (String of NaiveDateTime)"),
         ("endDate" = Option<String>, Query, description = "End date (String of NaiveDateTime)"),
@@ -301,7 +319,7 @@ pub async fn get_metrics(
         (status = 500, description = "Internal Server Error")
     )
 )]
-#[instrument(name = "Get cpu-metrics for runs, a specific run, or scenario")]
+#[instrument(name = "Get metrics for runs, a specific run, or scenario")]
 pub async fn get_cpu_metrics(
     State(pool): State<SqlitePool>,
     Json(payload): Json<String>,

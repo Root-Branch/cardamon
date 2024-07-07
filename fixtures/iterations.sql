@@ -1,6 +1,6 @@
-DELETE FROM scenario_iteration;
+DELETE FROM iteration;
 
-INSERT INTO scenario_iteration (
+INSERT INTO iteration (
     run_id, scenario_name, iteration, start_time, stop_time
 )
 VALUES

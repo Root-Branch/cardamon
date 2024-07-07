@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS scenario_iteration (
+CREATE TABLE IF NOT EXISTS iteration (
     run_id TEXT NOT NULL,
     scenario_name TEXT NOT NULL,
     iteration INT NOT NULL,

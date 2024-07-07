@@ -1,124 +1,84 @@
-pub mod cpu_metrics;
-pub mod run;
-pub mod scenario_iteration;
+pub mod iteration;
+pub mod metrics;
+pub mod pagination;
+pub mod scenario;
 
-use crate::dataset::{IterationWithMetrics, ObservationDataset};
+use self::scenario::ScenarioDao;
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use cpu_metrics::CpuMetricsDao;
-use scenario_iteration::ScenarioIterationDao;
+use iteration::IterationDao;
+use metrics::MetricsDao;
 use sqlx::SqlitePool;
 use std::{fs, path};
 
-use self::run::RunDao;
-
 #[async_trait]
-pub trait DataAccessService: Send + Sync {
-    fn run_dao(&self) -> &dyn RunDao;
-    fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao;
-    fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao;
-
-    async fn fetch_observation_dataset(
-        &self,
-        scenario_names: Vec<&str>,
-        previous_runs: u32,
-    ) -> anyhow::Result<ObservationDataset> {
-        // for each scenario, get the last `n` runs (including all iterations)
-        // grab the metrics associated with with run and group the data by scenario name.
-        let mut all_scenario_iterations_with_metrics = vec![];
-        for scenario_name in scenario_names.iter() {
-            let scenario_iterations = self
-                .scenario_iteration_dao()
-                .fetch_last(scenario_name, previous_runs)
-                .await?;
-
-            let mut scenario_iterations_with_metrics = vec![];
-            for scenario_iteration in scenario_iterations.into_iter() {
-                let cpu_metrics = self
-                    .cpu_metrics_dao()
-                    .fetch_within(
-                        &scenario_iteration.run_id,
-                        scenario_iteration.start_time,
-                        scenario_iteration.stop_time,
-                    )
-                    .await?;
-
-                let scenario_iteration_with_metrics =
-                    IterationWithMetrics::new(scenario_iteration, cpu_metrics);
-
-                scenario_iterations_with_metrics.push(scenario_iteration_with_metrics);
-            }
-            all_scenario_iterations_with_metrics.append(&mut scenario_iterations_with_metrics);
-        }
-        all_scenario_iterations_with_metrics.reverse();
-
-        Ok(ObservationDataset::new(
-            all_scenario_iterations_with_metrics,
-        ))
-    }
+pub trait DAOService: Send + Sync {
+    fn scenarios(&self) -> &dyn ScenarioDao;
+    fn iterations(&self) -> &dyn IterationDao;
+    fn metrics(&self) -> &dyn MetricsDao;
 }
 
 pub struct LocalDataAccessService {
-    run_dao: run::LocalDao,
-    scenario_iteration_dao: scenario_iteration::LocalDao,
-    cpu_metrics_dao: cpu_metrics::LocalDao,
+    scenarios: scenario::LocalDao,
+    iterations: iteration::LocalDao,
+    metrics: metrics::LocalDao,
 }
 impl LocalDataAccessService {
     pub fn new(pool: SqlitePool) -> Self {
-        let run_dao = run::LocalDao::new(pool.clone());
-        let scenario_iteration_dao = scenario_iteration::LocalDao::new(pool.clone());
-        let cpu_metrics_dao = cpu_metrics::LocalDao::new(pool.clone());
+        let scenarios = scenario::LocalDao::new(pool.clone());
+        let iterations = iteration::LocalDao::new(pool.clone());
+        let metrics = metrics::LocalDao::new(pool.clone());
 
         Self {
-            run_dao,
-            scenario_iteration_dao,
-            cpu_metrics_dao,
+            scenarios,
+            iterations,
+            metrics,
         }
     }
 }
-impl DataAccessService for LocalDataAccessService {
-    fn run_dao(&self) -> &dyn RunDao {
-        &self.run_dao
+impl DAOService for LocalDataAccessService {
+    fn scenarios(&self) -> &dyn ScenarioDao {
+        &self.scenarios
     }
 
-    fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao {
-        &self.scenario_iteration_dao
+    fn iterations(&self) -> &dyn IterationDao {
+        &self.iterations
     }
 
-    fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao {
-        &self.cpu_metrics_dao
+    fn metrics(&self) -> &dyn MetricsDao {
+        &self.metrics
     }
 }
 
 pub struct RemoteDataAccessService {
-    run_dao: run::RemoteDao,
-    scenario_iteration_dao: scenario_iteration::RemoteDao,
-    cpu_metrics_dao: cpu_metrics::RemoteDao,
+    _scenarios: scenario::RemoteDao,
+    _iterations: iteration::RemoteDao,
+    _metrics: metrics::RemoteDao,
 }
 impl RemoteDataAccessService {
     pub fn new(base_url: &str) -> Self {
-        let run_dao = run::RemoteDao::new(base_url);
-        let scenario_iteration_dao = scenario_iteration::RemoteDao::new(base_url);
-        let cpu_metrics_dao = cpu_metrics::RemoteDao::new(base_url);
+        let scenarios = scenario::RemoteDao::new(base_url);
+        let iterations = iteration::RemoteDao::new(base_url);
+        let metrics = metrics::RemoteDao::new(base_url);
 
         Self {
-            run_dao,
-            scenario_iteration_dao,
-            cpu_metrics_dao,
+            _scenarios: scenarios,
+            _iterations: iterations,
+            _metrics: metrics,
         }
     }
 }
-impl DataAccessService for RemoteDataAccessService {
-    fn run_dao(&self) -> &dyn RunDao {
-        &self.run_dao
+impl DAOService for RemoteDataAccessService {
+    fn scenarios(&self) -> &dyn ScenarioDao {
+        &self._scenarios
     }
 
-    fn scenario_iteration_dao(&self) -> &dyn ScenarioIterationDao {
-        &self.scenario_iteration_dao
+    fn iterations(&self) -> &dyn IterationDao {
+        &self._iterations
     }
 
-    fn cpu_metrics_dao(&self) -> &dyn CpuMetricsDao {
-        &self.cpu_metrics_dao
+    fn metrics(&self) -> &dyn MetricsDao {
+        &self._metrics
     }
 }
 

@@ -1,12 +1,12 @@
-DELETE FROM cpu_metrics;
+DELETE FROM metrics;
 
-INSERT INTO cpu_metrics (
+INSERT INTO metrics (
     run_id,
     process_id,
     process_name,
     cpu_usage,
-    total_usage,
-    core_count,
+    cpu_total_usage,
+    cpu_core_count,
     time_stamp
 )
 VALUES
