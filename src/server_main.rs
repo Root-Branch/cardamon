@@ -1,7 +1,7 @@
 mod server;
 use axum::extract::FromRef;
 use axum::routing::{get, post, Router};
-use cardamon::data_access::LocalDataAccessService;
+use cardamon::data_access::LocalDAOService;
 use dotenv::dotenv;
 use server::{
     metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist},
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     init_subscriber(subscriber);
 
     let pool = create_db().await?;
-    let data_access_service = LocalDataAccessService::new(pool.clone());
+    let data_access_service = LocalDAOService::new(pool.clone());
     let app = create_app(pool, data_access_service).await;
 
     let listener = tokio::net::TcpListener::bind(format!(
@@ -40,10 +40,10 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Clone, FromRef)]
 struct AppState {
     pool: SqlitePool,
-    dao_service: LocalDataAccessService,
+    dao_service: LocalDAOService,
 }
 // Keep seperated for integraion tests
-async fn create_app(pool: SqlitePool, dao_service: LocalDataAccessService) -> Router {
+async fn create_app(pool: SqlitePool, dao_service: LocalDAOService) -> Router {
     // Middleware later
     /*
     let protected = Router::new()
@@ -125,4 +125,3 @@ async fn create_db() -> anyhow::Result<SqlitePool> {
 
     Ok(db)
 }
-

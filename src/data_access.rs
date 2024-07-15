@@ -20,12 +20,12 @@ pub trait DAOService: Send + Sync {
 }
 
 #[derive(Clone, Debug)]
-pub struct LocalDataAccessService {
+pub struct LocalDAOService {
     scenarios: scenario::LocalDao,
     iterations: iteration::LocalDao,
     metrics: metrics::LocalDao,
 }
-impl LocalDataAccessService {
+impl LocalDAOService {
     pub fn new(pool: SqlitePool) -> Self {
         let scenarios = scenario::LocalDao::new(pool.clone());
         let iterations = iteration::LocalDao::new(pool.clone());
@@ -38,7 +38,7 @@ impl LocalDataAccessService {
         }
     }
 }
-impl DAOService for LocalDataAccessService {
+impl DAOService for LocalDAOService {
     fn scenarios(&self) -> &dyn ScenarioDao {
         &self.scenarios
     }
@@ -52,12 +52,12 @@ impl DAOService for LocalDataAccessService {
     }
 }
 
-pub struct RemoteDataAccessService {
+pub struct RemoteDAOService {
     _scenarios: scenario::RemoteDao,
     _iterations: iteration::RemoteDao,
     _metrics: metrics::RemoteDao,
 }
-impl RemoteDataAccessService {
+impl RemoteDAOService {
     pub fn new(base_url: &str) -> Self {
         let scenarios = scenario::RemoteDao::new(base_url);
         let iterations = iteration::RemoteDao::new(base_url);
@@ -70,7 +70,7 @@ impl RemoteDataAccessService {
         }
     }
 }
-impl DAOService for RemoteDataAccessService {
+impl DAOService for RemoteDAOService {
     fn scenarios(&self) -> &dyn ScenarioDao {
         &self._scenarios
     }

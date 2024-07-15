@@ -5,17 +5,15 @@ use std::fmt;
 #[derive(Debug)]
 pub enum ServerError {
     DatabaseError(sqlx::Error),
-    TimeFormatError(chrono::ParseError),
     #[allow(dead_code)]
-    OtherError,
+    AnyhowError(anyhow::Error),
 }
 
 impl ServerError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             ServerError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ServerError::OtherError => StatusCode::INTERNAL_SERVER_ERROR,
-            ServerError::TimeFormatError(_) => StatusCode::BAD_REQUEST,
+            ServerError::AnyhowError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -26,8 +24,7 @@ impl ServerError {
                 sqlx::Error::RowNotFound => format!("Row not found: {}", e),
                 _ => format!("Database error: {}", e),
             },
-            ServerError::OtherError => "Un-used error".to_string(),
-            ServerError::TimeFormatError(e) => format!("Time parsing error: {}", e),
+            ServerError::AnyhowError(e) => format!("Anyhow error: {}", e),
         }
     }
 }
@@ -45,5 +42,10 @@ impl IntoResponse for ServerError {
             Json(json!({"error": self.error_message()})),
         )
             .into_response()
+    }
+}
+impl From<anyhow::Error> for ServerError {
+    fn from(error: anyhow::Error) -> Self {
+        ServerError::AnyhowError(error)
     }
 }

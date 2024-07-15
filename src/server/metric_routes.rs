@@ -169,20 +169,6 @@ async fn insert_metrics_into_db(pool: &SqlitePool, metrics: &Metrics) -> Result<
             .context("Error deleting scenario from remote server")
     }
 */
-#[instrument(name = "Fetch last scenario_iteration")]
-pub async fn scenario_iteration_fetch_last(
-    State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<Iteration>, ServerError> {
-    tracing::debug!("Received request to fetch last scenario run");
-
-    let scenario_iteration = fetch_last_scenario_iteration(&pool).await.map_err(|e| {
-        tracing::error!("Failed to fetch last scenario run from database: {:?}", e);
-        ServerError::DatabaseError(e)
-    })?;
-
-    tracing::info!("Successfully fetched last scenario run");
-    Ok(Json(scenario_iteration))
-}
 
 #[instrument(name = "Persist scenario iteration")]
 pub async fn scenario_iteration_persist(
@@ -200,17 +186,6 @@ pub async fn scenario_iteration_persist(
 
     tracing::info!("Scenario run persisted successfully");
     Ok("Scenario run persisted".to_string())
-}
-
-#[inline]
-async fn fetch_last_scenario_iteration(pool: &SqlitePool) -> Result<Iteration, sqlx::Error> {
-    let scenario_iteration = sqlx::query_as!(
-        Iteration,
-        "SELECT * FROM iteration ORDER BY start_time DESC LIMIT 1"
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(scenario_iteration)
 }
 
 async fn insert_scenario_iteration_into_db(

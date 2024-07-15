@@ -6,13 +6,14 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use cardamon::data_access::{pagination::Page, DAOService, LocalDataAccessService};
+use cardamon::data_access::LocalDAOService;
+use cardamon::dataset::DatasetBuilder;
 use chrono::Utc;
 use tracing::instrument;
 
 #[instrument(name = "Get list of scenarios")]
 pub async fn get_scenarios(
-    State(dao_service): State<LocalDataAccessService>,
+    State(dao_service): State<LocalDAOService>,
     Query(params): Query<ScenariosParams>,
 ) -> Result<Json<ScenariosResponse>, ServerError> {
     let begin = params.from_date.unwrap_or(0);
@@ -21,23 +22,25 @@ pub async fn get_scenarios(
         .unwrap_or_else(|| Utc::now().timestamp_millis().try_into().unwrap());
     let page = params.page.unwrap_or(1);
     let limit = params.limit.unwrap_or(5);
-    let pageinator = Some(Page::new(limit, page));
-    let scenarios = dao_service
-        .scenarios()
-        .fetch_in_range(begin, end, &pageinator)
-        .await;
+    let dataset = DatasetBuilder::new(&dao_service);
+    let scenariots = dataset
+        .scenarios_in_range(begin, end)
+        .page(limit, page)
+        .last_n_runs(5)
+        .await?;
+    println!("{:?}", scenariots.data());
 
     todo!("Implement get_scenarios")
 }
 
 #[instrument(name = "Get specific scenario")]
 pub async fn get_scenario(
-    State(dao_service): State<LocalDataAccessService>,
+    State(dao_service): State<LocalDAOService>,
     Path(scenario_id): Path<String>,
     Query(params): Query<ScenarioParams>,
 ) -> Result<Json<ScenarioResponse>, ServerError> {
-    let page = params.page.unwrap_or(1);
-    let limit = params.limit.unwrap_or(5);
+    let _page = params.page.unwrap_or(1);
+    let _limit = params.limit.unwrap_or(5);
     todo!("Implement get_scenario")
 }
 
