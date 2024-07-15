@@ -52,6 +52,7 @@ pub trait IterationDao {
 // //////////////////////////////////////
 // LocalDao
 
+#[derive(Clone, Debug)]
 pub struct LocalDao {
     pub pool: sqlx::SqlitePool,
 }

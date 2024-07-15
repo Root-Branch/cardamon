@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use iteration::IterationDao;
 use metrics::MetricsDao;
 use sqlx::SqlitePool;
+use std::fmt::Debug;
 use std::{fs, path};
 
 #[async_trait]
@@ -18,6 +19,7 @@ pub trait DAOService: Send + Sync {
     fn metrics(&self) -> &dyn MetricsDao;
 }
 
+#[derive(Clone, Debug)]
 pub struct LocalDataAccessService {
     scenarios: scenario::LocalDao,
     iterations: iteration::LocalDao,

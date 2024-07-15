@@ -1,11 +1,11 @@
-use server::ui_routes::ApiDoc;
-use utoipa::OpenApi;
 mod server;
+use axum::extract::FromRef;
 use axum::routing::{get, post, Router};
+use cardamon::data_access::LocalDataAccessService;
 use dotenv::dotenv;
 use server::{
     metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist},
-    ui_routes::{get_cpu_metrics, get_iterations, get_metrics, get_runs, get_scenarios_for_run},
+    ui_routes::{get_database_url, get_scenario, get_scenarios},
 };
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use std::fs::File;
@@ -13,7 +13,6 @@ use tracing::{info, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt::writer::MakeWriterExt, layer::SubscriberExt, EnvFilter, Registry};
-use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,7 +22,8 @@ async fn main() -> anyhow::Result<()> {
     init_subscriber(subscriber);
 
     let pool = create_db().await?;
-    let app = create_app(pool).await;
+    let data_access_service = LocalDataAccessService::new(pool.clone());
+    let app = create_app(pool, data_access_service).await;
 
     let listener = tokio::net::TcpListener::bind(format!(
         "0.0.0.0:{}",
@@ -37,30 +37,32 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
+#[derive(Clone, FromRef)]
+struct AppState {
+    pool: SqlitePool,
+    dao_service: LocalDataAccessService,
+}
 // Keep seperated for integraion tests
-async fn create_app(pool: SqlitePool) -> Router {
+async fn create_app(pool: SqlitePool, dao_service: LocalDataAccessService) -> Router {
     // Middleware later
     /*
     let protected = Router::new()
     .route("/user", get(routes::user::get_user))
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
+    let app_state = AppState { pool, dao_service };
     let ui_router = Router::new()
-        .route("/api/runs", get(get_runs))
-        .route("/api/runs/:run_id/scenarios", get(get_scenarios_for_run))
-        .route("/api/scenarios/:scenario_id", get(get_iterations))
-        .route("/api/metrics", get(get_metrics))
-        .route("/api/cpu-metrics", get(get_cpu_metrics));
+        .route("/api/scenarios", get(get_scenarios))
+        .route("/api/database_url", get(get_database_url))
+        .route("/api/scenarios/:scenario_id", get(get_scenario));
 
     Router::new()
         .merge(ui_router)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .route("/cpu_metrics", post(persist_metrics))
         .route("/cpu_metrics/:id", get(fetch_within))
         //.route("/cpu_metrics/:id", delete(delete_metrics)) removed for now
         .route("/scenario", post(scenario_iteration_persist))
-        .with_state(pool)
+        .with_state(app_state)
 }
 
 fn get_subscriber(name: String, env_filter: String) -> impl Subscriber + Sync + Send {
@@ -123,3 +125,4 @@ async fn create_db() -> anyhow::Result<SqlitePool> {
 
     Ok(db)
 }
+

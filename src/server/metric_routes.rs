@@ -65,7 +65,7 @@ pub async fn fetch_within(
     State(pool): State<SqlitePool>,
 ) -> anyhow::Result<Json<Vec<Metrics>>, ServerError> {
     let begin = params.begin.unwrap_or(0);
-    let end = params.end.unwrap_or_else(|| Utc::now().timestamp());
+    let end = params.end.unwrap_or_else(|| Utc::now().timestamp_millis());
 
     tracing::debug!(
         "Received request to fetch CPU metrics for run ID: {}, begin: {}, end: {}",

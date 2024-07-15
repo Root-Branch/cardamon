@@ -25,6 +25,7 @@ pub trait ScenarioDao {
     async fn fetch_by_name(&self, name: &str, page: &Option<Page>) -> anyhow::Result<Vec<String>>;
 }
 
+#[derive(Clone, Debug)]
 pub struct LocalDao {
     pool: SqlitePool,
 }

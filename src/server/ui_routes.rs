@@ -1,356 +1,48 @@
-use std::time::SystemTime;
-
 use super::errors::ServerError;
-use crate::server::ui_types::*;
+use crate::server::ui_types::{
+    ScenarioParams, ScenarioResponse, ScenariosParams, ScenariosResponse,
+};
 use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use cardamon::{
-    data_access::{iteration::Iteration, metrics::Metrics, DAOService},
-    dataset::DatasetBuilder,
-};
-use chrono::{DateTime, NaiveDateTime, Utc};
-use sqlx::SqlitePool;
-use tracing::{info, instrument};
-use utoipa::OpenApi;
+use cardamon::data_access::{pagination::Page, DAOService, LocalDataAccessService};
+use chrono::Utc;
+use tracing::instrument;
 
-#[utoipa::path(
-    get,
-    path = "/api/runs",
-    params(
-        ("startDate" = Option<String>, Query, description = "Start date (String of NaiveDateTime)"),
-        ("endDate" = Option<String>, Query, description = "End date (String of NaiveDateTime)"),
-    ),
-    responses(
-        (status = 200, description = "Data for runs within date range.", body = RunsResponse),
-        (status = 500, description = "Internal Server Error")
-    )
-)]
-#[instrument(name = "Get list of runs")]
-pub async fn get_runs(
-    State(pool): State<SqlitePool>,
-    Query(params): Query<RunParams>,
-) -> anyhow::Result<Json<RunsResponse>, ServerError> {
-    let end_timestamp = match params.end_date {
-        Some(date_str) => NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S%.3fZ")
-            .map_err(|e| {
-                tracing::error!("Failed to parse incoming time {:?}", e);
-                ServerError::TimeFormatError(e)
-            })?
-            .and_utc()
-            .timestamp_millis(),
-        None => Utc::now().timestamp_millis(),
-    };
+#[instrument(name = "Get list of scenarios")]
+pub async fn get_scenarios(
+    State(dao_service): State<LocalDataAccessService>,
+    Query(params): Query<ScenariosParams>,
+) -> Result<Json<ScenariosResponse>, ServerError> {
+    let begin = params.from_date.unwrap_or(0);
+    let end = params
+        .to_date
+        .unwrap_or_else(|| Utc::now().timestamp_millis().try_into().unwrap());
+    let page = params.page.unwrap_or(1);
+    let limit = params.limit.unwrap_or(5);
+    let pageinator = Some(Page::new(limit, page));
+    let scenarios = dao_service
+        .scenarios()
+        .fetch_in_range(begin, end, &pageinator)
+        .await;
 
-    let start_timestamp = match params.start_date {
-        Some(date_str) => NaiveDateTime::parse_from_str(&date_str, "%Y-%m-%dT%H:%M:%S%.3fZ")
-            .map_err(|e| {
-                tracing::error!("Failed to parse incoming time {:?}", e);
-                ServerError::TimeFormatError(e)
-            })?
-            .and_utc()
-            .timestamp_millis(),
-        None => 0,
-    };
-
-    // Get runs between these
-
-    // Get each iteration
-    let scenario_iterations =
-        fetch_scenario_iteration_within_range(&pool, start_timestamp, end_timestamp)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to fetch runs from database {:?}", e);
-                ServerError::DatabaseError(e)
-            })?;
-
-    // Fetch all CPU metrics for these run_ids in a single query
-    let all_metrics = fetch_metrics_for_multiple_runs(&pool, start_timestamp, end_timestamp)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to fetch CPU metrics from database {:?}", e);
-            ServerError::DatabaseError(e)
-        })?;
-    let now = SystemTime::now();
-    let mapped_iterations = create_scenario_metrics_vec(scenario_iterations, all_metrics);
-    let mut data: Vec<Runs> = Vec::new();
-
-    for (iteration, metrics) in mapped_iterations {
-        let mut run_metrics = Vec::new();
-
-        // Calculate total CPU usage
-        let total_cpu = metrics.iter().map(|m| m.cpu_usage).sum::<f64>();
-        run_metrics.push(Metric {
-            metric_type: "CPU".to_string(),
-            type_field: MetricType::TOTAL,
-            value: total_cpu,
-        });
-        run_metrics.push(Metric {
-            metric_type: "CPU".to_string(),
-            type_field: MetricType::AVERAGE,
-            value: total_cpu / metrics.len() as f64,
-        });
-
-        // Placeholder as we don't have other metrics now
-        run_metrics.push(Metric {
-            metric_type: "CO2".to_string(),
-            type_field: MetricType::TOTAL,
-            value: 0.81, // placeholder value
-        });
-        run_metrics.push(Metric {
-            metric_type: "POWER".to_string(),
-            type_field: MetricType::AVERAGE,
-            value: 1.23, // placeholder value
-        });
-
-        // Convert timestamps to ISO 8601 format
-        let start_time = DateTime::from_timestamp_millis(iteration.start_time)
-            .unwrap()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
-        let end_time = DateTime::from_timestamp_millis(iteration.stop_time)
-            .unwrap()
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string();
-
-        let run = Runs {
-            metrics: run_metrics,
-            start_time,
-            id: iteration.run_id,
-            end_time,
-        };
-
-        data.push(run);
-    }
-
-    info!("mapping data-structures took {:?}", now.elapsed());
-    info!("Length of data: {:?}", data.len());
-    Ok(Json(RunsResponse { data }))
+    todo!("Implement get_scenarios")
 }
 
-fn create_scenario_metrics_vec(
-    iterations: Vec<Iteration>,
-    all_metrics: Vec<Metrics>,
-) -> Vec<(Iteration, Vec<Metrics>)> {
-    iterations
-        .into_iter()
-        .map(|it| {
-            let matching_metrics = all_metrics
-                .iter()
-                .filter(|metric| {
-                    metric.time_stamp >= it.start_time && metric.time_stamp <= it.stop_time
-                })
-                .cloned()
-                .collect();
-            (it, matching_metrics)
-        })
-        .collect()
-}
-
-async fn fetch_metrics_for_multiple_runs(
-    dao_service: &dyn DAOService,
-    from: i64,
-    to: i64,
-    scenario: &str,
-    page_size: u32,
-    page_num: u32,
-) -> Result<Vec<Metrics>, sqlx::Error> {
-    let dataset = DatasetBuilder::new(&dao_service)
-        .scenario(scenario)
-        .runs_in_range(from, to)
-        .page(page_size, page_num)
-        .await?;
-
-    let scenario_datasets = dataset.by_scenario();
-    for scenario_dataset in scenario_datasets {
-        let run_datasets = scenario_dataset.by_run();
-    }
-
-    let metrics = sqlx::query_as!(
-        Metrics,
-        "SELECT * FROM metrics WHERE time_stamp BETWEEN ? AND ?",
-        from,
-        to
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(metrics)
-}
-
-async fn fetch_scenario_iteration_within_range(
-    pool: &SqlitePool,
-    from: i64,
-    to: i64,
-) -> Result<Vec<Iteration>, sqlx::Error> {
-    let runs = sqlx::query_as!(
-        Iteration,
-        "SELECT * FROM iteration WHERE start_time >= ? AND stop_time <= ?",
-        from,
-        to
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(runs)
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/runs/{runId}",
-    params(
-        ("runId",description = "ID of the run")
-    ),
-    responses(
-        (status = 200, description = "List of scenarios for the specified run", body = RunWithScenarioResponse),
-        (status = 500, description = "Internal Server Error")
-    )
-)]
-#[instrument(name = "Get list of scenarios for specific run")]
-pub async fn get_scenarios_for_run(
-    Path(run_id): Path<String>,
-    State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<RunWithScenarioResponse>, ServerError> {
-    // Returns runs *with* scenario_name
-    Ok(Json(RunWithScenarioResponse {
-        data: vec![
-            RunWithScenario {
-                metrics: vec![
-                    Metric {
-                        metric_type: "CO2".to_string(),
-                        type_field: MetricType::TOTAL,
-                        value: 0.81,
-                    },
-                    Metric {
-                        metric_type: "POWER".to_string(),
-                        type_field: MetricType::TOTAL,
-                        value: 1.23,
-                    },
-                    Metric {
-                        metric_type: "CPU".to_string(),
-                        type_field: MetricType::AVERAGE,
-                        value: 2.34,
-                    },
-                ],
-                start_time: "2023-06-15T10:30:00.000Z".to_string(),
-                id: "run_123".to_string(),
-                end_time: "2023-06-15T11:00:00.000Z".to_string(),
-                scenario_name: Some("Name1".to_string()),
-            },
-            RunWithScenario {
-                metrics: vec![
-                    Metric {
-                        metric_type: "CO2".to_string(),
-                        type_field: MetricType::TOTAL,
-                        value: 0.92,
-                    },
-                    Metric {
-                        metric_type: "POWER".to_string(),
-                        type_field: MetricType::TOTAL,
-                        value: 1.45,
-                    },
-                    Metric {
-                        metric_type: "CPU".to_string(),
-                        type_field: MetricType::TOTAL,
-                        value: 2.67,
-                    },
-                ],
-                scenario_name: Some("Name2".to_string()),
-                start_time: "2023-06-16T09:15:00.000Z".to_string(),
-                id: "run_456".to_string(),
-                end_time: "2023-06-16T09:45:00.000Z".to_string(),
-            },
-        ],
-    }))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/scenarios/{scenarioId}",
-    params(
-        ("scenarioId", description = "ID of the scenario")
-    ),
-    responses(
-        (status = 200, description = "List of iterations for the specified scenario", body = ScenarioResponse),
-        (status = 500, description = "Internal Server Error")
-    )
-)]
-#[instrument(name = "Get list of iterations for specific scenario")]
-pub async fn get_iterations(
+#[instrument(name = "Get specific scenario")]
+pub async fn get_scenario(
+    State(dao_service): State<LocalDataAccessService>,
     Path(scenario_id): Path<String>,
-    State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<ScenarioResponse>, ServerError> {
-    todo!()
+    Query(params): Query<ScenarioParams>,
+) -> Result<Json<ScenarioResponse>, ServerError> {
+    let page = params.page.unwrap_or(1);
+    let limit = params.limit.unwrap_or(5);
+    todo!("Implement get_scenario")
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/metrics",
-    params(
-        ("startDate" = Option<String>, Query, description = "Start date (String of NaiveDateTime)"),
-        ("endDate" = Option<String>, Query, description = "End date (String of NaiveDateTime)"),
-        ("runId" = Option<String>, Query, description = "Run ID"),
-        ("scenarioId" = Option<String>, Query, description = "Scenario ID "),
-        ("type" = MetricType, Query, description = "Type of metric")
-    ),
-    responses(
-        (status = 200, description = "Metrics based on the specified type (total or average) for runs, a specific run, or a specific scenario.", body = MetricResponse),
-        (status = 500, description = "Internal Server Error")
-    )
-)]
-#[instrument(name = "Get metrics for runs, a specific run or scenario")]
-pub async fn get_metrics(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<String>,
-) -> anyhow::Result<Json<MetricResponse>, ServerError> {
-    todo!()
+#[instrument(name = "Get database url")]
+pub async fn get_database_url() -> Result<Json<String>, ServerError> {
+    // Implement the logic to get the database URL
+    todo!("Implement get_database_url")
 }
-
-#[utoipa::path(
-    get,
-    path = "/api/metrics",
-    params(
-        ("startDate" = Option<String>, Query, description = "Start date (String of NaiveDateTime)"),
-        ("endDate" = Option<String>, Query, description = "End date (String of NaiveDateTime)"),
-        ("runId" = Option<String>, Query, description = "Run ID"),
-        ("scenarioId" = Option<String>, Query, description = "Scenario ID")
-    ),
-    responses(
-        (status = 200, description = "CPU metrics for runs, a specific run, or scenario", body = CpuMetricsResponse),
-        (status = 500, description = "Internal Server Error")
-    )
-)]
-#[instrument(name = "Get metrics for runs, a specific run, or scenario")]
-pub async fn get_cpu_metrics(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<String>,
-) -> anyhow::Result<Json<CpuMetricsResponse>, ServerError> {
-    todo!()
-}
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        get_runs,
-        get_scenarios_for_run,
-        get_iterations,
-        get_metrics,
-        get_cpu_metrics
-    ),
-    components(schemas(
-        RunParams,
-        Metric,
-        RunWithScenario,
-        Runs,
-        RunsResponse,
-        ScenarioResponse,
-        MetricType,
-        CpuMetric,
-        Scenario,
-        GetMetricsParams,
-        GetCpuMetricsParams,
-        RunWithScenarioResponse,
-        CpuMetricsResponse,
-        MetricResponse
-    ))
-)]
-pub struct ApiDoc;
