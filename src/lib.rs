@@ -4,13 +4,156 @@ pub mod dataset;
 pub mod metrics;
 pub mod metrics_logger;
 
+use crate::config::Config;
 use anyhow::{anyhow, Context};
+use colored::Colorize;
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
 use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
 use dataset::ObservationDataset;
-use std::{fs::File, path::Path, time, vec};
+use serde_json::Value;
+use std::{collections::HashMap, fs::File, io::Write, path::Path, time, vec};
 use subprocess::{Exec, NullFile, Redirection};
+use sysinfo::{CpuRefreshKind, RefreshKind, System};
 use tracing::info;
+
+fn ask_for_cpu() -> String {
+    loop {
+        print!("Please enter a CPU name: ");
+        let _ = std::io::stdout().flush();
+
+        let mut input = String::new();
+        let res = std::io::stdin().read_line(&mut input);
+        match res {
+            Ok(_) => return input,
+            Err(_) => continue,
+        }
+    }
+}
+
+fn ask_for_tdp() -> f64 {
+    loop {
+        print!("Please enter the TDP of your CPU in watts: ");
+        let _ = std::io::stdout().flush();
+
+        let mut input = String::new();
+        let res = std::io::stdin().read_line(&mut input);
+        match res {
+            Ok(_) => match input.trim().parse::<f64>() {
+                Ok(parsed_input) => {
+                    return parsed_input;
+                }
+                Err(_) => {
+                    println!("{}", "Please enter a valid number.".yellow());
+                    continue;
+                }
+            },
+            Err(_) => continue,
+        }
+    }
+}
+
+fn find_cpu() -> Option<String> {
+    let sys = System::new_with_specifics(RefreshKind::new().with_cpu(CpuRefreshKind::everything()));
+    sys.cpus().first().map(|cpu| cpu.brand().to_string())
+}
+
+fn parse_json(json_obj: &Value) -> Option<f64> {
+    json_obj
+        .get("verbose")?
+        .get("avg_power")?
+        .get("value")?
+        .as_f64()
+}
+
+async fn fetch_tdp(cpu_name: &str) -> anyhow::Result<f64> {
+    let client = reqwest::Client::new();
+    let mut json = HashMap::new();
+    json.insert("name", cpu_name);
+
+    let resp = client
+        .post("https://api.boavizta.org/v1/component/cpu")
+        .header("Content-Type", "application/json")
+        .json(&json)
+        .send()
+        .await?;
+
+    let json_obj = resp.json().await?;
+    parse_json(&json_obj).context("Error finding CPU stats from Boavizta")
+}
+
+/// Attempts to find the users CPU automatically and asks the user to enter it manually if that
+/// fails.
+pub async fn init_config() {
+    let cpu_name: String;
+
+    println!();
+    println!("🌱🌿🌳🌸🌸🌸🌸🌱🌿🌳");
+    println!("Welcome to Cardamon");
+    println!("🌱🌿🌳🌸🌸🌸🌸🌱🌿🌳");
+    println!();
+    loop {
+        print!("Would you like to create a config for this computer [1] or another computer [2]? ");
+        let _ = std::io::stdout().flush();
+
+        let mut ans = String::new();
+        let res = std::io::stdin().read_line(&mut ans);
+        match res {
+            Ok(_) => {
+                let opt = ans.trim().parse::<u32>();
+                match opt {
+                    Ok(1) => {
+                        cpu_name = match find_cpu() {
+                            Some(name) => {
+                                println!("{} {}", "It looks like you have a".yellow(), name);
+                                name
+                            }
+                            None => {
+                                println!("{}", "Unable to find CPU!".red());
+                                ask_for_cpu()
+                            }
+                        };
+                        break;
+                    }
+                    Ok(2) => {
+                        cpu_name = ask_for_cpu();
+                        break;
+                    }
+                    _ => {
+                        println!("{}", "Please enter 1 or 2.\n".yellow());
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {
+                println!("{}", "Please enter 1 or 2.\n".yellow());
+                continue;
+            }
+        }
+    }
+
+    let tdp = match fetch_tdp(&cpu_name).await {
+        Ok(tdp) => {
+            println!("{} {}", "Boavista reports an avg power of".yellow(), tdp);
+            tdp
+        }
+        Err(_) => {
+            println!("{}", "Cannot get avg power from Boavizta!".red());
+            ask_for_tdp()
+        }
+    };
+
+    match Config::write_example_to_file(&cpu_name, tdp, Path::new("./cardamon.toml")) {
+        Ok(_) => {
+            println!("{}", "cardamon.toml created!".green());
+            println!("\n🤩\n");
+        }
+
+        Err(err) => {
+            println!("{}\n{}", "Error creating config.".red(), err);
+            println!("\n😭\n");
+        }
+    }
+}
 
 /// Runs the given command as a detached processes. This function does not block because the
 /// process is managed by the OS and running separately from this thread.
@@ -272,12 +415,32 @@ pub async fn run<'a>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
         config::{ProcessToExecute, ProcessType},
-        metrics_logger, run_process, ProcessToObserve,
+        fetch_tdp, metrics_logger, run_process, ProcessToObserve,
     };
     use std::time::Duration;
     use sysinfo::{Pid, System};
+
+    #[test]
+    fn should_find_cpu() {
+        let cpu_name = find_cpu();
+        assert!(cpu_name.is_some())
+    }
+
+    #[tokio::test]
+    async fn fetch_tdp_should_work() -> anyhow::Result<()> {
+        let cpu_name = find_cpu();
+
+        if let Some(cpu_name) = cpu_name {
+            let tdp = fetch_tdp(&cpu_name).await?;
+            assert!(tdp > 0f64);
+            return Ok(());
+        }
+
+        panic!()
+    }
 
     #[cfg(target_family = "windows")]
     mod windows {

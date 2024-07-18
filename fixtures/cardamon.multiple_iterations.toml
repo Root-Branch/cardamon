@@ -1,5 +1,8 @@
-debug_level = "info"
 metrics_server_url = "http://cardamon.rootandbranch.io"
+
+[computer]
+cpu_name = "AMD Ryzen 7 Pro 6850U with radeon"
+cpu_avg_power = 11.223
 
 [[processes]]
 name = "db"

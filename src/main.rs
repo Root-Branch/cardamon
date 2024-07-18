@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use cardamon::{
-    config::{self, calculate_tdp, ProcessToObserve},
+    config::{self, ProcessToObserve},
     data_access::LocalDataAccessService,
-    run,
+    init_config, run,
 };
 use clap::{Parser, Subcommand};
 use sqlx::{migrate::MigrateDatabase, SqlitePool};
@@ -13,7 +13,7 @@ use tracing::Level;
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
 pub struct Cli {
     #[arg(short, long)]
-    pub verbose: Option<bool>,
+    pub verbose: bool,
 
     #[arg(short, long)]
     pub file: Option<String>,
@@ -41,10 +41,7 @@ pub enum Commands {
         #[arg(long)]
         external_only: bool,
     },
-    Init {
-        #[arg(long, value_name = "TDP")]
-        tdp: Option<u32>,
-    },
+    Init,
 }
 
 #[tokio::main]
@@ -52,34 +49,10 @@ async fn main() -> anyhow::Result<()> {
     // Parse clap args
     let args = Cli::parse();
 
-    // Initialize config if it exists
-    let config = match &args.file {
-        Some(path) => config::Config::from_path(Path::new(path)),
-        None => config::Config::from_path(Path::new("./cardamon.toml")),
-    };
-    let config = match config {
-        Ok(cfg) => Some(cfg),
-        Err(e) => {
-            eprintln!("Error loading configuration: {}", e);
-            None
-        }
-    };
-
     // Set the debug level, prioritizing command-line args over config
-    let level = if args.verbose.unwrap_or(false) {
-        Level::DEBUG
-    } else {
-        match &config {
-            Some(cfg) => match cfg.debug_level.as_deref() {
-                Some("info") => Level::INFO,
-                Some("error") => Level::ERROR,
-                Some("warn") => Level::WARN,
-                Some("debug") => Level::DEBUG,
-                Some("trace") => Level::TRACE,
-                _ => Level::INFO,
-            },
-            None => Level::INFO,
-        }
+    let level = match args.verbose {
+        true => Level::DEBUG,
+        false => Level::INFO,
     };
 
     // Set up tracing subscriber
@@ -87,22 +60,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     match args.command {
-        Commands::Init { tdp } => {
-            let path = Path::new("./cardamon.toml");
-            if path.exists() {
-                anyhow::bail!(
-                    "Cardamon.toml exists, please remove cardamon.toml before starting program"
-                )
-            }
-            let tdp = match tdp {
-                Some(tdp) => tdp,
-                None => calculate_tdp().await?,
-            };
-            let mut config = config::Config::default();
-            config.tdp = Some(tdp);
-            config::Config::config_to_file(path, config)?;
-            println!("Wrote default config to cardamon.toml with TDP {tdp}");
-            return Ok(());
+        Commands::Init => {
+            init_config().await;
         }
         Commands::Run {
             name,
@@ -110,6 +69,22 @@ async fn main() -> anyhow::Result<()> {
             containers,
             external_only,
         } => {
+            // Initialize config if it exists
+            let config = match &args.file {
+                Some(path) => config::Config::try_from_path(Path::new(path)),
+                None => config::Config::try_from_path(Path::new("./cardamon.toml")),
+            };
+            let config = match config {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    eprintln!(
+                        "Error loading configuration, please run `cardamon init`: {}",
+                        e
+                    );
+                    None
+                }
+            };
+
             // Ensure we have a config for the Run command
             let config = match config {
                 Some(cfg) => cfg,
