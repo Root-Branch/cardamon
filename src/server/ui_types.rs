@@ -48,6 +48,34 @@ pub struct Pagination {
 
 // Single scenario
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScenarioResponse {
-    pub todo: String,
+    pub scenario: Scenario,
+    pub runs: Vec<Runs>,
+    pub pagination: Pagination,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Runs {
+    pub run_id: String,
+    pub iteration: u32,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub co2_emission: f64,
+    pub power_consumption: f64,
+    pub cpu_utilization: Vec<CpuUtilization>,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CpuUtilization {
+    pub process_name: String,
+    pub cpu_usage: Vec<Usage>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Usage {
+    pub cpu_usage: f64,
+    pub timestamp: i64,
 }

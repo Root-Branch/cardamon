@@ -362,7 +362,6 @@ impl IterationWithMetrics {
     pub fn metrics(&self) -> &[Metrics] {
         &self.metrics
     }
-
     pub fn accumulate_by_process(&self) -> Vec<ProcessMetrics> {
         let mut metrics_by_process: HashMap<String, Vec<&Metrics>> = HashMap::new();
         for metric in self.metrics.iter() {
