@@ -1,27 +1,62 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 use anyhow::Context;
-use serde::Deserialize;
-use std::{fs, io::Read};
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::{self, File},
+    io::{Read, Write},
+};
 
-#[derive(Debug, Deserialize)]
+#[cfg(not(windows))]
+static EXAMPLE_CONFIG: &str = include_str!("data/cardamon.unix.toml");
+#[cfg(windows)]
+static EXAMPLE_CONFIG: &str = include_str!("data/cardamon.win.toml");
+
+#[cfg(not(windows))]
+static LINE_ENDING: &str = "\n";
+#[cfg(windows)]
+static LINE_ENDING: &str = "\r\n";
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
-    pub debug_level: Option<String>,
     pub metrics_server_url: Option<String>,
+    pub computer: Computer,
     pub processes: Vec<ProcessToExecute>,
     pub scenarios: Vec<Scenario>,
     pub observations: Vec<Observation>,
 }
 impl Config {
-    pub fn from_path(path: &std::path::Path) -> anyhow::Result<Config> {
+    pub fn write_example_to_file(
+        cpu_name: &str,
+        cpu_avg_power: f64,
+        path: &std::path::Path,
+    ) -> anyhow::Result<File> {
+        // remove the line containing tdp
+        let mut lines = EXAMPLE_CONFIG.lines().map(|s| s.to_string()).collect_vec();
+
+        // add a line at the top of the file containing the new tdp
+        let mut new_conf_lines = vec![
+            "[computer]".to_string(),
+            format!("cpu_name = \"{}\"", cpu_name),
+            format!("cpu_avg_power = {}", cpu_avg_power),
+            "".to_string(),
+        ];
+        new_conf_lines.append(&mut lines);
+        let conf_str = new_conf_lines.join(LINE_ENDING);
+
+        // write to file
+        let mut file = File::create_new(path)?;
+        File::write_all(&mut file, conf_str.as_bytes())?;
+        Ok(file)
+    }
+
+    pub fn try_from_path(path: &std::path::Path) -> anyhow::Result<Config> {
         let mut config_str = String::new();
         fs::File::open(path)?.read_to_string(&mut config_str)?;
+        Config::try_from_str(&config_str)
+    }
 
-        toml::from_str::<Config>(&config_str).context("Error parsing config file.")
+    pub fn try_from_str(conf_str: &str) -> anyhow::Result<Config> {
+        toml::from_str::<Config>(conf_str).map_err(|e| anyhow::anyhow!("TOML parsing error: {}", e))
     }
 
     fn find_observation(&self, observation_name: &str) -> Option<&Observation> {
@@ -130,7 +165,13 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+pub struct Computer {
+    pub cpu_name: String,
+    pub cpu_avg_power: f64,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Clone, Copy, Serialize)]
 #[serde(tag = "to", rename_all = "lowercase")]
 pub enum Redirect {
     Null,
@@ -138,7 +179,7 @@ pub enum Redirect {
     File,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Scenario {
     pub name: String,
     pub desc: String,
@@ -157,14 +198,14 @@ impl Scenario {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ProcessType {
     BareMetal,
     Docker { containers: Vec<String> },
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct ProcessToExecute {
     pub name: String,
     pub up: String,
@@ -193,7 +234,7 @@ impl<'a> ScenarioToExecute<'a> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Observation {
     pub name: String,
     pub scenarios: Vec<String>,
@@ -231,14 +272,17 @@ mod tests {
 
     #[test]
     fn can_load_config_file() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        assert_eq!(cfg.debug_level, Some("info".to_string()));
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.success.toml"))?;
+        assert_eq!(
+            cfg.metrics_server_url,
+            Some("http://cardamon.rootandbranch.io".to_string())
+        );
         Ok(())
     }
 
     #[test]
     fn can_find_observation_by_name() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.success.toml"))?;
         let observation = cfg.find_observation("checkout");
         assert!(observation.is_some());
 
@@ -250,7 +294,7 @@ mod tests {
 
     #[test]
     fn can_find_scenario_by_name() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
         let scenario = cfg.find_scenario("user_signup");
         assert!(scenario.is_some());
 
@@ -262,7 +306,7 @@ mod tests {
 
     #[test]
     fn can_find_process_by_name() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.success.toml"))?;
         let process = cfg.find_process("server");
         assert!(process.is_some());
 
@@ -274,7 +318,7 @@ mod tests {
 
     #[test]
     fn collecting_processes_works() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
         let scenario1 = cfg
             .find_scenario("user_signup")
             .unwrap()
@@ -306,7 +350,7 @@ mod tests {
 
     #[test]
     fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
         let scenario = cfg
             .find_scenario("basket_10")
             .expect("scenario 'basket_10' should exist!");
@@ -317,7 +361,7 @@ mod tests {
 
     #[test]
     fn can_create_exec_plan_for_observation() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
 
         let exec_plan = cfg.create_execution_plan("checkout")?;
         let scenario_names: Vec<&str> = exec_plan
@@ -344,7 +388,7 @@ mod tests {
 
     #[test]
     fn can_create_exec_plan_for_scenario() -> anyhow::Result<()> {
-        let cfg = Config::from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
 
         let exec_plan = cfg.create_execution_plan("basket_10")?;
         let scenario_names: Vec<&str> = exec_plan
@@ -365,50 +409,4 @@ mod tests {
 
         Ok(())
     }
-
-    // #[test]
-    // fn can_create_scenarios_to_run_for_obs() -> anyhow::Result<()> {
-    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-    //     let obs = cfg.get_observation("checkout")?;
-    //     let scenarios_to_run = cfg.scenarios_to_run(obs)?;
-    //     assert_eq!(scenarios_to_run.len(), 1);
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn can_run_an_observation() -> anyhow::Result<()> {
-    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-    //     let run = cfg.run("checkout")?;
-    //
-    //     // should have 1 scenario to run
-    //     let scenarios_to_run = run.scenarios_to_run;
-    //     let first = scenarios_to_run
-    //         .first()
-    //         .context("Should have 1 scenario to run")?;
-    //     assert_eq!(scenarios_to_run.len(), 1);
-    //     assert_eq!(first.command, "node ./scenarios/basket_10.js");
-    //
-    //     // should have 2 processes (1 docker with a container name and 1 bare metal with a PID)
-    //     match &run.processes_to_observe[..] {
-    //         [ProcessToObserve::ContainerName(name), ProcessToObserve::BareMetalId(pid), ..] => {
-    //             assert_eq!(name, "postgres");
-    //             assert!(*pid > 0);
-    //         }
-    //         _ => panic!(),
-    //     }
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn cannot_run_misconfigured_observation() -> anyhow::Result<()> {
-    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.missing_process.toml"))?;
-    //     let run = cfg.run("checkout");
-    //     assert!(run.is_err());
-    //
-    //     let cfg = Config::from_path(Path::new("./fixtures/cardamon.missing_scenario.toml"))?;
-    //     let run = cfg.run("checkout");
-    //     assert!(run.is_err());
-    //
-    //     Ok(())
-    // }
 }

@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Page {
     pub size: u32,
     pub num: u32,

@@ -1,6 +1,7 @@
 use super::pagination::Page;
 use anyhow::Context;
 use async_trait::async_trait;
+use tracing::debug;
 
 #[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct Iteration {
@@ -64,8 +65,12 @@ impl LocalDao {
 #[async_trait]
 impl IterationDao for LocalDao {
     async fn fetch_runs_all(&self, scenario: &str, page: &Page) -> anyhow::Result<Vec<Iteration>> {
+        debug!(
+            "Fetching all runs for scenario: {}, page: {:?}",
+            scenario, page
+        );
         let offset = page.offset();
-        sqlx::query_as!(
+        let result = sqlx::query_as!(
             Iteration,
             r#"
             SELECT * FROM iteration 
@@ -79,7 +84,10 @@ impl IterationDao for LocalDao {
         )
         .fetch_all(&self.pool)
         .await
-        .context("Error fetching iterations")
+        .context("Error fetching iterations");
+
+        debug!("Fetch all runs result: {:?}", result.is_ok());
+        result
     }
 
     async fn fetch_runs_in_range(
@@ -89,8 +97,12 @@ impl IterationDao for LocalDao {
         to: i64,
         page: &Page,
     ) -> anyhow::Result<Vec<Iteration>> {
+        debug!(
+            "Fetching runs in range for scenario: {}, from: {}, to: {}, page: {:?}",
+            scenario, from, to, page
+        );
         let offset = page.offset();
-        sqlx::query_as!(
+        let result = sqlx::query_as!(
             Iteration,
             r#"
             SELECT * FROM iteration 
@@ -106,11 +118,15 @@ impl IterationDao for LocalDao {
         )
         .fetch_all(&self.pool)
         .await
-        .context("Error fetching iterations")
+        .context("Error fetching iterations");
+
+        debug!("Fetch runs in range result: {:?}", result.is_ok());
+        result
     }
 
     async fn fetch_runs_last_n(&self, scenario: &str, n: u32) -> anyhow::Result<Vec<Iteration>> {
-        sqlx::query_as!(
+        debug!("Fetching last {} runs for scenario: {}", n, scenario);
+        let result = sqlx::query_as!(
             Iteration,
             r#"
             SELECT *
@@ -129,20 +145,29 @@ impl IterationDao for LocalDao {
         )
         .fetch_all(&self.pool)
         .await
-        .context("Error fetching iterations")
+        .context("Error fetching iterations");
+
+        debug!("Fetch last n runs result: {:?}", result.is_ok());
+        result
     }
 
     async fn persist(&self, scenario_iteration: &Iteration) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5)",
+        debug!("Persisting iteration: {:?}", scenario_iteration);
+        let result = sqlx::query!(
+            "INSERT INTO iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5)",
             scenario_iteration.run_id,
             scenario_iteration.scenario_name,
             scenario_iteration.iteration,
             scenario_iteration.start_time,
-            scenario_iteration.stop_time)
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .context("Error inserting scenario into db.")
+            scenario_iteration.stop_time
+        )
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .context("Error inserting scenario into db.");
+
+        debug!("Persist result: {:?}", result.is_ok());
+        result
     }
 }
 

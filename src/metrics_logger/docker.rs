@@ -278,8 +278,11 @@ CMD ["sleep", "infinity"]
             // return bytes ( wanted by bollard::build_image
             Bytes::from(tar_buffer)
         };
-        let image_id = nanoid!(10, &nanoid::alphabet::SAFE[..62]).to_lowercase();
+        // Nano generates them with random from A-Z ) Plus _ and -
+        // 2.. Removes _ and - as these are invalid
+        let image_id = nanoid!(10, &nanoid::alphabet::SAFE[2..]).to_lowercase();
         let image_id_latest = format!("{}:latest", image_id);
+        println!("{}", image_id_latest);
         // Build the image
         let options = BuildImageOptions {
             dockerfile: "Dockerfile",
@@ -297,7 +300,7 @@ CMD ["sleep", "infinity"]
         // Create and start the container
         let container_name = format!(
             "cardamon-test-container-{}",
-            nanoid!(10, &nanoid::alphabet::SAFE[..62]).to_lowercase()
+            nanoid!(10, &nanoid::alphabet::SAFE[2..]).to_lowercase()
         );
         let container = docker
             .create_container(
