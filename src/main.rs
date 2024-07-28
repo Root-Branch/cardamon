@@ -2,7 +2,7 @@ use std::path::Path;
 
 use cardamon::{
     config::{self, ProcessToObserve},
-    data_access::LocalDataAccessService,
+    data_access::LocalDAOService,
     run,
 };
 use clap::{Parser, Subcommand};
@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
         } => {
             // set up local data access
             let pool = create_db().await?;
-            let data_access_service = LocalDataAccessService::new(pool);
+            let data_access_service = LocalDAOService::new(pool);
 
             // create an execution plan
             let mut execution_plan = if external_only {
