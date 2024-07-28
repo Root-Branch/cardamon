@@ -29,12 +29,22 @@ pub async fn get_scenarios(
     let dataset = DatasetBuilder::new(&dao_service);
 
     info!("Fetching scenarios between {} and {}", begin, end);
-    let scenarios = dataset
-        .scenarios_in_range(begin, end)
-        .page(limit, page)
-        .last_n_runs(5)
-        .await?;
-
+    let scenarios = match params.search_query {
+        Some(query) => {
+            dataset
+                .scenarios_by_name(&query)
+                .page(limit, page)
+                .last_n_runs(5)
+                .await?
+        }
+        None => {
+            dataset
+                .scenarios_in_range(begin, end)
+                .page(limit, page)
+                .last_n_runs(5)
+                .await?
+        }
+    };
     debug!("Fetched {} scenarios", scenarios.data().len());
 
     let mut scenario_responses = Vec::new();

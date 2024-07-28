@@ -72,3 +72,5 @@ tar = "0.4.41"
 utoipa = { version = "4.2.3" }
 utoipa-swagger-ui = { version = "7.1.0", features = ["axum"] }
 utoipa-rapidoc = { version = "4.0.0", features = ["axum"] }
+tower-http = { version = "0.5.2", features = ["cors"] }
+http = "1.1.0"

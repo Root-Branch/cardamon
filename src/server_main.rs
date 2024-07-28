@@ -3,12 +3,14 @@ use axum::extract::FromRef;
 use axum::routing::{get, post, Router};
 use cardamon::data_access::LocalDAOService;
 use dotenv::dotenv;
+use http::Method;
 use server::{
     metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist},
     ui_routes::{get_database_url, get_scenario, get_scenarios},
 };
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use std::fs::File;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
@@ -62,6 +64,11 @@ async fn create_app(pool: SqlitePool, dao_service: LocalDAOService) -> Router {
         .route("/cpu_metrics/:id", get(fetch_within))
         //.route("/cpu_metrics/:id", delete(delete_metrics)) removed for now
         .route("/scenario", post(scenario_iteration_persist))
+        .layer(
+            CorsLayer::new()
+                .allow_methods([Method::GET, Method::POST])
+                .allow_origin(Any),
+        )
         .with_state(app_state)
 }
 
