@@ -3,7 +3,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use tracing::debug;
 
-#[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
+#[derive(PartialEq, Clone, Debug, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct Iteration {
     pub run_id: String,
     pub scenario_name: String,

@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-
-use super::errors::ServerError;
+use super::{
+    errors::ServerError,
+    ui_types::{Iteration, ScenarioRun, Usage},
+};
 use crate::server::ui_types::{
-    CpuUtilization, Pagination, Runs, Scenario, ScenarioParams, ScenarioResponse, ScenariosParams,
-    ScenariosResponse, Usage,
+    Pagination, Scenario, ScenarioParams, ScenarioResponse, ScenariosParams, ScenariosResponse,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -12,6 +12,7 @@ use axum::{
 use cardamon::data_access::LocalDAOService;
 use cardamon::dataset::DatasetBuilder;
 use chrono::Utc;
+use std::collections::HashMap;
 use tracing::instrument;
 use tracing::{debug, info};
 
@@ -47,35 +48,55 @@ pub async fn get_scenarios(
     };
     debug!("Fetched {} scenarios", scenarios.data().len());
 
-    let mut scenario_responses = Vec::new();
+    let mut scenario_map: HashMap<String, Vec<Iteration>> = HashMap::new();
     for scenario in scenarios.data().iter() {
+        scenario_map
+            .entry(scenario.iteration().scenario_name.clone())
+            .or_insert_with(Vec::new)
+            .push(Iteration {
+                run_id: scenario.iteration().run_id.clone(),
+                scenario_name: scenario.iteration().scenario_name.clone(),
+                iteration: scenario.iteration().iteration,
+                start_time: scenario.iteration().start_time,
+                stop_time: scenario.iteration().stop_time,
+                usage: None,
+            });
+    }
+
+    let mut scenario_responses = Vec::new();
+    for (name, iterations) in scenario_map.iter() {
         let avg_co2_emission: f64 = 2.0; // Placeholder value
         let avg_power_consumption: f64 = 2.0; // Placeholder value
-        let mets = scenario.metrics();
-        let avg_cpu_utilization: f64 = if !mets.is_empty() {
-            mets.iter().map(|m| m.cpu_usage).sum::<f64>() / mets.len() as f64
-        } else {
-            0.0
-        };
-        let last_start_time: u64 = mets
-            .iter()
-            .map(|m| m.time_stamp)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or(0) as u64;
+        let avg_cpu_utilization: f64 = 0.0; // Placeholder value, should calculate based on iterations
+
+        let last_start_time: u64 =
+            iterations.iter().map(|i| i.start_time).max().unwrap_or(0) as u64;
         let co2_emission_trend: Vec<f64> = (1..=10).map(|x| x as f64).collect();
+
+        let runs = iterations
+            .iter()
+            .map(|i| ScenarioRun {
+                run_id: i.run_id.clone(),
+                iterations: vec![i.clone()],
+            })
+            .collect();
+
         scenario_responses.push(Scenario {
-            name: scenario.iteration().scenario_name.clone(),
+            name: name.clone(),
             avg_co2_emission,
             avg_cpu_utilization,
             avg_power_consumption,
             co2_emission_trend,
             last_start_time,
+            runs,
         });
     }
-    // Total scenarios is total in result,
-    let total_scenarios = scenarios.data().len() as f64;
-    // Currently dataset doesn't allow for count
-    let total_pages = 0;
+
+    // Sort by scenario last time
+    scenario_responses.sort_by(|a, b| b.last_start_time.cmp(&a.last_start_time));
+
+    let total_scenarios = scenario_responses.len() as f64;
+    let total_pages = 0; // TODO ADD PAGES
 
     let pagination = Pagination {
         current_page: page,
@@ -95,6 +116,7 @@ pub async fn get_scenarios(
     );
     Ok(Json(response))
 }
+
 #[instrument(name = "Get specific scenario")]
 pub async fn get_scenario(
     State(dao_service): State<LocalDAOService>,
@@ -115,67 +137,70 @@ pub async fn get_scenario(
     }
 
     let mut total_cpu_utilization: f64 = 0.0;
-    let mut runs = Vec::new();
-
+    let mut scenario_map: HashMap<String, Vec<Iteration>> = HashMap::new();
     for scenario in scenario_data.data().iter() {
-        let total_cpu: f64 = scenario.metrics().iter().map(|m| m.cpu_usage).sum::<f64>();
-        total_cpu_utilization += total_cpu;
+        let mut usages: Vec<Usage> = scenario
+            .metrics()
+            .iter()
+            .map(|m| Usage {
+                cpu_usage: m.cpu_usage,
+                timestamp: m.time_stamp,
+            })
+            .collect();
 
-        let mut cpu_utilization = HashMap::new();
-        for metric in scenario.metrics() {
-            cpu_utilization
-                .entry(metric.process_name.clone())
-                .or_insert_with(Vec::new)
-                .push(Usage {
-                    cpu_usage: metric.cpu_usage,
-                    timestamp: metric.time_stamp,
-                });
-        }
+        usages.sort_by(|a, b| b.timestamp.cmp(&a.timestamp)); // Sort usages by timestamp descending
 
-        let run = Runs {
-            run_id: scenario.iteration().run_id.clone(),
-            iteration: scenario.iteration().iteration as u32,
-            start_time: scenario.iteration().start_time,
-            end_time: scenario.iteration().stop_time,
-            co2_emission: 0.0,      // Placeholder value
-            power_consumption: 0.0, // Placeholder value
-            cpu_utilization: cpu_utilization
-                .into_iter()
-                .map(|(process_name, cpu_usage)| CpuUtilization {
-                    process_name,
-                    cpu_usage,
-                })
-                .collect(),
-        };
+        scenario_map
+            .entry(scenario.iteration().run_id.clone())
+            .or_insert_with(Vec::new)
+            .push(Iteration {
+                run_id: scenario.iteration().run_id.clone(),
+                scenario_name: scenario.iteration().scenario_name.clone(),
+                iteration: scenario.iteration().iteration,
+                start_time: scenario.iteration().start_time,
+                stop_time: scenario.iteration().stop_time,
+                usage: Some(usages),
+            });
 
-        runs.push(run);
+        total_cpu_utilization += scenario.metrics().iter().map(|m| m.cpu_usage).sum::<f64>();
     }
-    let total_scenarios = scenario_data.data().len() as u32;
+
+    let scenario_name = scenario_data
+        .data()
+        .first()
+        .unwrap()
+        .iteration()
+        .scenario_name
+        .clone();
+    let last_start_time = scenario_data
+        .data()
+        .last()
+        .map(|s| s.iteration().start_time as u64)
+        .unwrap_or(0);
+
+    let runs = scenario_map
+        .iter()
+        .map(|(run_id, iterations)| ScenarioRun {
+            run_id: run_id.clone(),
+            iterations: iterations.clone(),
+        })
+        .collect();
+
     let scenario_response = ScenarioResponse {
         scenario: Scenario {
-            name: scenario_data
-                .data()
-                .first()
-                .unwrap()
-                .iteration()
-                .scenario_name
-                .clone(),
+            name: scenario_name,
             avg_co2_emission: 0.0, // Placeholder value
             avg_cpu_utilization: total_cpu_utilization / scenario_data.data().len() as f64,
             avg_power_consumption: 0.0,     // Placeholder value
             co2_emission_trend: Vec::new(), // Fill this if you have the data
-            last_start_time: scenario_data
-                .data()
-                .last()
-                .map(|s| s.iteration().start_time as u64)
-                .unwrap_or(0),
+            last_start_time,
+            runs,
         },
-        runs,
         pagination: Pagination {
             current_page: page,
             total_pages: 0,
             per_page: limit,
-            total_scenarios,
+            total_scenarios: scenario_data.data().len() as u32,
         },
     };
 

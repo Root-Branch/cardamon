@@ -10,7 +10,8 @@ use colored::Colorize;
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
 use data_access::{iteration::Iteration, DAOService};
 use dataset::{Dataset, DatasetBuilder};
-use std::{fs::File, path::Path, time};
+use serde_json::Value;
+use std::{collections::HashMap, fs::File, io::Write, path::Path, time, vec};
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
 use tracing::info;
@@ -535,7 +536,7 @@ mod tests {
             assert_eq!(processes_to_observe.len(), 1);
 
             match processes_to_observe.first().expect("process should exist") {
-                ProcessToObserve::Pid(_, pid) => {
+                ProcessToObserve::Pid(name, pid) => {
                     let mut system = System::new();
                     system.refresh_all();
                     let proc = system.process(Pid::from_u32(*pid));

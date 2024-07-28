@@ -22,10 +22,20 @@ pub struct ScenarioParams {
 
 // Multiple scenarios
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ScenariosResponse {
-    pub scenarios: Vec<Scenario>,
-    pub pagination: Pagination,
+pub struct ScenarioRun {
+    pub run_id: String,
+    pub iterations: Vec<Iteration>,
 }
+#[derive(Debug, Deserialize, Clone, Serialize)]
+pub struct Iteration {
+    pub run_id: String,
+    pub scenario_name: String,
+    pub iteration: i64,
+    pub start_time: i64,
+    pub stop_time: i64,
+    pub usage: Option<Vec<Usage>>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Scenario {
@@ -35,7 +45,15 @@ pub struct Scenario {
     pub avg_power_consumption: f64,
     pub last_start_time: u64,
     pub co2_emission_trend: Vec<f64>,
+    pub runs: Vec<ScenarioRun>,
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ScenariosResponse {
+    pub scenarios: Vec<Scenario>,
+    pub pagination: Pagination,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pagination {
@@ -51,7 +69,6 @@ pub struct Pagination {
 #[serde(rename_all = "camelCase")]
 pub struct ScenarioResponse {
     pub scenario: Scenario,
-    pub runs: Vec<Runs>,
     pub pagination: Pagination,
 }
 
@@ -73,7 +90,7 @@ pub struct CpuUtilization {
     pub cpu_usage: Vec<Usage>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Usage {
     pub cpu_usage: f64,

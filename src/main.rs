@@ -3,7 +3,7 @@ use std::path::Path;
 use cardamon::{
     config::{self, ProcessToObserve},
     data_access::LocalDAOService,
-    run,
+    init_config, run,
 };
 use clap::{Parser, Subcommand};
 use sqlx::{migrate::MigrateDatabase, SqlitePool};
