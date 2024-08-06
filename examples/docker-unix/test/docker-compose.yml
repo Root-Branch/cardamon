@@ -1,12 +1,8 @@
 services:
   test:
-    image: ubuntu:20.04
-    container_name: test
-    command: bash -c "while true; do shuf -i 0-1337 -n 1; sleep 1; done"
+    image: progrium/stress
+    command: --cpu 1 --timeout 300s
     deploy:
       resources:
         limits:
-          cpus: '0.50'
-        reservations:
-          cpus: '0.25'
-
+          cpus: '1'

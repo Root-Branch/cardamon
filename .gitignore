@@ -14,6 +14,9 @@
 
 ### dotenv ###
 .env
+debug.log
+.stderr
+.stdout
 curl/*.json
 
 ### Intellij+all ###
