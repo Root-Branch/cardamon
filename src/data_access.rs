@@ -6,7 +6,7 @@ pub mod scenario;
 use self::scenario::ScenarioDao;
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use iteration::IterationDao;
+use iteration::{Iteration, IterationDao};
 use metrics::MetricsDao;
 use sqlx::SqlitePool;
 use std::fmt::Debug;
@@ -36,6 +36,19 @@ impl LocalDAOService {
             iterations,
             metrics,
         }
+    }
+    pub async fn fetch_unique_run_ids(&self, scenario_name: &str) -> anyhow::Result<Vec<String>> {
+        self.iterations.fetch_unique_run_ids(scenario_name).await
+    }
+
+    pub async fn fetch_by_scenario_and_run(
+        &self,
+        scenario_name: &str,
+        run_id: &str,
+    ) -> anyhow::Result<Vec<Iteration>> {
+        self.iterations
+            .fetch_by_scenario_and_run(scenario_name, run_id)
+            .await
     }
 }
 impl DAOService for LocalDAOService {

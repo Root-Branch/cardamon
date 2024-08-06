@@ -61,6 +61,53 @@ impl LocalDao {
     pub fn new(pool: sqlx::SqlitePool) -> Self {
         Self { pool }
     }
+    pub async fn fetch_unique_run_ids(&self, scenario_name: &str) -> anyhow::Result<Vec<String>> {
+        debug!("Fetching unique run_ids for scenario: {}", scenario_name);
+        let result = sqlx::query!(
+            r#"
+            SELECT DISTINCT run_id
+            FROM iteration
+            WHERE scenario_name = ?
+            ORDER BY start_time DESC
+            "#,
+            scenario_name
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Error fetching unique run_ids")?;
+
+        let run_ids = result.into_iter().map(|r| r.run_id).collect();
+        debug!("Fetch unique run_ids result: {:?}", run_ids);
+        Ok(run_ids)
+    }
+
+    pub async fn fetch_by_scenario_and_run(
+        &self,
+        scenario_name: &str,
+        run_id: &str,
+    ) -> anyhow::Result<Vec<Iteration>> {
+        debug!(
+            "Fetching iterations for scenario: {} and run_id: {}",
+            scenario_name, run_id
+        );
+        let result = sqlx::query_as!(
+            Iteration,
+            r#"
+            SELECT *
+            FROM iteration
+            WHERE scenario_name = ? AND run_id = ?
+            ORDER BY start_time ASC
+            "#,
+            scenario_name,
+            run_id
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Error fetching iterations by scenario and run");
+
+        debug!("Fetch by scenario and run result: {:?}", result.is_ok());
+        result
+    }
 }
 #[async_trait]
 impl IterationDao for LocalDao {

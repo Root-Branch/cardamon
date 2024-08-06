@@ -362,6 +362,7 @@ impl IterationWithMetrics {
     pub fn metrics(&self) -> &[Metrics] {
         &self.metrics
     }
+
     pub fn accumulate_by_process(&self) -> Vec<ProcessMetrics> {
         let mut metrics_by_process: HashMap<String, Vec<&Metrics>> = HashMap::new();
         for metric in self.metrics.iter() {
@@ -473,6 +474,51 @@ impl<'a> Dataset {
                 }
             })
             .collect::<Vec<_>>()
+    }
+    /// Returns the total number of unique scenarios in the dataset
+    pub fn total_unique_scenarios(&self) -> usize {
+        self.data
+            .iter()
+            .map(|x| &x.iteration.scenario_name)
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    }
+    /// Returns a paginated list of unique scenarios
+    pub fn paginated_unique_scenarios(&self, page: u32, limit: u32) -> Vec<String> {
+        let unique_scenarios: Vec<String> = self
+            .data
+            .iter()
+            .map(|x| x.iteration.scenario_name.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let start = (page * limit) as usize;
+        let end = std::cmp::min((page + 1) * limit, unique_scenarios.len() as u32) as usize;
+
+        unique_scenarios[start..end].to_vec()
+    }
+
+    /// Returns the last N runs for a specific scenario
+    pub fn last_n_runs_for_scenario(
+        &self,
+        scenario_name: &str,
+        n: usize,
+    ) -> Vec<&IterationWithMetrics> {
+        self.data
+            .iter()
+            .filter(|x| x.iteration.scenario_name == scenario_name)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .take(n)
+            .collect()
+    }
+
+    /// Returns the total number of pages given a limit per page
+    pub fn total_pages(&self, limit: u32) -> u32 {
+        let total_scenarios = self.total_unique_scenarios() as u32;
+        (total_scenarios as f64 / limit as f64).ceil() as u32
     }
 }
 
