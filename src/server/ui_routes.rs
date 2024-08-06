@@ -3,7 +3,8 @@ use super::{
     ui_types::{Iteration, ScenarioRun, Usage},
 };
 use crate::server::ui_types::{
-    Pagination, Scenario, ScenarioParams, ScenarioResponse, ScenariosParams, ScenariosResponse,
+    Pagination, Scenario, Scenario5Average, ScenarioParams, ScenarioResponse, ScenariosParams,
+    ScenariosResponse,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -88,13 +89,16 @@ pub async fn get_scenarios(
 
         let avg_co2_emission: f64 = 2.0; // Placeholder value
         let avg_power_consumption: f64 = 2.0; // Placeholder value
-        let avg_cpu_utilization: f64 = last_runs
+        let (total_cpu_usage, total_metrics) = last_runs
             .iter()
             .flat_map(|run| run.metrics())
-            .map(|m| m.cpu_usage)
-            .sum::<f64>()
-            / last_runs.len() as f64;
+            .fold((0.0, 0), |(sum, count), m| (sum + m.cpu_usage, count + 1));
 
+        let avg_cpu_utilization: f64 = if total_metrics > 0 {
+            total_cpu_usage / total_metrics as f64
+        } else {
+            0.0
+        };
         let last_start_time: u64 = last_runs
             .iter()
             .map(|run| run.iteration().start_time)
@@ -108,10 +112,10 @@ pub async fn get_scenarios(
             .map(|(run_id, iterations)| ScenarioRun { run_id, iterations })
             .collect();
 
-        scenario_responses.push(Scenario {
+        scenario_responses.push(Scenario5Average {
             name: scenario_name,
             avg_co2_emission,
-            avg_cpu_utilization,
+            last_5_avg_cpu: avg_cpu_utilization,
             avg_power_consumption,
             co2_emission_trend,
             last_start_time,

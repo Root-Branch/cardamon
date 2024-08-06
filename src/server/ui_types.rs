@@ -35,6 +35,17 @@ pub struct Iteration {
     pub stop_time: i64,
     pub usage: Option<Vec<Usage>>,
 }
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Scenario5Average {
+    pub name: String,
+    pub avg_co2_emission: f64,
+    pub last_5_avg_cpu: f64,
+    pub avg_power_consumption: f64,
+    pub last_start_time: u64,
+    pub co2_emission_trend: Vec<f64>,
+    pub runs: Vec<ScenarioRun>,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +61,7 @@ pub struct Scenario {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ScenariosResponse {
-    pub scenarios: Vec<Scenario>,
+    pub scenarios: Vec<Scenario5Average>,
     pub pagination: Pagination,
 }
 

@@ -5,6 +5,7 @@ use chrono::Utc;
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use sysinfo::System;
 use tracing::{debug, error, info, warn};
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is
@@ -73,7 +74,11 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             continue;
         }
+        let mut sys = System::new_all();
+        sys.refresh_cpu();
+        let core_count = num_cpus::get();
 
+        info!("{core_count}");
         for container in containers {
             if let Some(container_id) = container.id.as_ref() {
                 let container_name_with_slash = container
@@ -96,8 +101,12 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
 
                 match docker_stats {
                     Some(Ok(stats)) => {
-                        let cpu_metrics =
-                            calculate_cpu_metrics(container_id, container_name.to_string(), &stats);
+                        let cpu_metrics = calculate_cpu_metrics(
+                            container_id,
+                            container_name.to_string(),
+                            &stats,
+                            &core_count,
+                        );
                         debug!(
                             "Pushing metrics to metrics log form container name/s {:?}",
                             container.names
@@ -124,7 +133,12 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
     }
 }
 
-fn calculate_cpu_metrics(container_id: &str, container_name: String, stats: &Stats) -> CpuMetrics {
+fn calculate_cpu_metrics(
+    container_id: &str,
+    container_name: String,
+    stats: &Stats,
+    core_count: &usize,
+) -> CpuMetrics {
     let cpu_delta =
         stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
     let system_delta = stats.cpu_stats.system_cpu_usage.unwrap_or(0)
@@ -136,16 +150,19 @@ fn calculate_cpu_metrics(container_id: &str, container_name: String, stats: &Sta
     } else {
         0.0
     };
-
+    let cpu_usage = if cpu_usage != 0.0 {
+        cpu_usage / *core_count as f64
+    } else {
+        0.0
+    };
     info!(
         "Calculated CPU metrics for container {} ({}), cpu percentage: {}",
         container_id, container_name, cpu_usage
     );
-
     CpuMetrics {
         process_id: container_id.to_string(),
         process_name: container_name,
-        cpu_usage,
+        cpu_usage: cpu_usage / *core_count as f64,
         core_count: stats.cpu_stats.online_cpus.unwrap_or(1) as i32,
         timestamp: Utc::now().timestamp_millis(),
     }

@@ -6,12 +6,13 @@ pub mod metrics_logger;
 
 use crate::config::Config;
 use anyhow::{anyhow, Context};
+use chrono::Utc;
 use colored::Colorize;
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
-use data_access::{iteration::Iteration, DAOService};
+use data_access::{iteration::Iteration, run::Run, DAOService};
 use dataset::{Dataset, DatasetBuilder};
 use serde_json::Value;
-use std::{collections::HashMap, fs::File, io::Write, path::Path, time, vec};
+use std::{collections::HashMap, fs::File, io::Write, path::Path, vec};
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
 use tracing::info;
@@ -242,9 +243,7 @@ async fn run_scenario<'a>(
     run_id: &str,
     scenario_to_execute: &ScenarioToExecute<'a>,
 ) -> anyhow::Result<Iteration> {
-    let start = time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)?
-        .as_millis();
+    let start = Utc::now().timestamp_millis();
 
     // Split the scenario_command into a vector
     let command_parts = match shlex::split(&scenario_to_execute.scenario.command) {
@@ -271,9 +270,7 @@ async fn run_scenario<'a>(
         .context(format!("Tokio command failed to run {command}"))?;
     info!("Ran command {}", scenario_to_execute.scenario.command);
     if output.status.success() {
-        let stop = time::SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)?
-            .as_millis();
+        let stop = Utc::now().timestamp_millis();
 
         let scenario_iteration = Iteration::new(
             run_id,
@@ -366,16 +363,14 @@ pub async fn run<'a>(
     }
 
     // record the cardamon run
-    // let start_time = time::SystemTime::now()
-    //     .duration_since(time::UNIX_EPOCH)?
-    //     .as_millis() as i64;
-    // let mut run = data_access::run::Run::new(&run_id, start_time);
-    // dao_service.runs().persist(&run).await?;
 
     // ---- for each scenario ----
     for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
         // start the metrics loggers
         let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
+
+        let start_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
+                                                        // timezones
 
         // run the scenario
         let scenario_iteration = run_scenario(&run_id, scenario_to_execute).await?;
@@ -393,6 +388,18 @@ pub async fn run<'a>(
         }
 
         // write scenario and metrics to db
+        // write run table first due to foreign key constraints
+        //let stop_time = time::SystemTime::now().duration_since(time::UNIX_EPOCH).
+        let stop_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
+                                                       // timezones
+        dao_service
+            .runs()
+            .persist_run(&Run {
+                id: run_id.clone(),
+                start_time,
+                stop_time: Some(stop_time),
+            })
+            .await?;
         dao_service
             .iterations()
             .persist(&scenario_iteration)
@@ -405,14 +412,6 @@ pub async fn run<'a>(
                 .await?;
         }
     }
-    // ---- end for ----
-
-    // update run stop time
-    // let stop_time = time::SystemTime::now()
-    //     .duration_since(time::UNIX_EPOCH)?
-    //     .as_millis() as i64;
-    // run.stop(stop_time);
-    // dao_service.runs().persist(&run).await?;
 
     // stop the application
     shutdown_application(&exec_plan, &processes_to_observe)?;

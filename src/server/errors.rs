@@ -8,7 +8,7 @@ pub enum ServerError {
     InternalServerError(String),
     #[allow(dead_code)]
     AnyhowError(anyhow::Error),
-    NotFound(String),
+    //NotFound(String),
 }
 
 impl ServerError {
@@ -16,7 +16,7 @@ impl ServerError {
         match self {
             ServerError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::AnyhowError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ServerError::NotFound(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            //ServerError::NotFound(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -29,7 +29,7 @@ impl ServerError {
                 _ => format!("Database error: {}", e),
             },
             ServerError::AnyhowError(e) => format!("Anyhow error: {}", e),
-            ServerError::NotFound(e) => format!("{} not found", e),
+            //ServerError::NotFound(e) => format!("{} not found", e),
             ServerError::InternalServerError(e) => format!("{} ", e),
         }
     }

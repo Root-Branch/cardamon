@@ -493,9 +493,14 @@ impl<'a> Dataset {
             .into_iter()
             .collect();
 
+        let total_items = unique_scenarios.len();
         let start = (page * limit) as usize;
-        let end = std::cmp::min((page + 1) * limit, unique_scenarios.len() as u32) as usize;
 
+        if start >= total_items {
+            return Vec::new(); // Return an empty vector if start index is out of bounds
+        }
+
+        let end = std::cmp::min(start + limit as usize, total_items);
         unique_scenarios[start..end].to_vec()
     }
 

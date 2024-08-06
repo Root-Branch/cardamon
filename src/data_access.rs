@@ -1,6 +1,7 @@
 pub mod iteration;
 pub mod metrics;
 pub mod pagination;
+pub mod run;
 pub mod scenario;
 
 use self::scenario::ScenarioDao;
@@ -8,6 +9,7 @@ use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use iteration::{Iteration, IterationDao};
 use metrics::MetricsDao;
+use run::RunDao;
 use sqlx::SqlitePool;
 use std::fmt::Debug;
 use std::{fs, path};
@@ -17,6 +19,7 @@ pub trait DAOService: Send + Sync {
     fn scenarios(&self) -> &dyn ScenarioDao;
     fn iterations(&self) -> &dyn IterationDao;
     fn metrics(&self) -> &dyn MetricsDao;
+    fn runs(&self) -> &dyn RunDao;
 }
 
 #[derive(Clone, Debug)]
@@ -24,17 +27,19 @@ pub struct LocalDAOService {
     scenarios: scenario::LocalDao,
     iterations: iteration::LocalDao,
     metrics: metrics::LocalDao,
+    runs: run::LocalDao,
 }
 impl LocalDAOService {
     pub fn new(pool: SqlitePool) -> Self {
         let scenarios = scenario::LocalDao::new(pool.clone());
         let iterations = iteration::LocalDao::new(pool.clone());
         let metrics = metrics::LocalDao::new(pool.clone());
-
+        let runs = run::LocalDao::new(pool.clone());
         Self {
             scenarios,
             iterations,
             metrics,
+            runs,
         }
     }
     pub async fn fetch_unique_run_ids(&self, scenario_name: &str) -> anyhow::Result<Vec<String>> {
@@ -63,23 +68,30 @@ impl DAOService for LocalDAOService {
     fn metrics(&self) -> &dyn MetricsDao {
         &self.metrics
     }
+
+    fn runs(&self) -> &dyn RunDao {
+        &self.runs
+    }
 }
 
 pub struct RemoteDAOService {
     _scenarios: scenario::RemoteDao,
     _iterations: iteration::RemoteDao,
     _metrics: metrics::RemoteDao,
+    _runs: run::RemoteDao,
 }
 impl RemoteDAOService {
     pub fn new(base_url: &str) -> Self {
         let scenarios = scenario::RemoteDao::new(base_url);
         let iterations = iteration::RemoteDao::new(base_url);
         let metrics = metrics::RemoteDao::new(base_url);
+        let runs = run::RemoteDao::new(base_url);
 
         Self {
             _scenarios: scenarios,
             _iterations: iterations,
             _metrics: metrics,
+            _runs: runs,
         }
     }
 }
@@ -94,6 +106,9 @@ impl DAOService for RemoteDAOService {
 
     fn metrics(&self) -> &dyn MetricsDao {
         &self._metrics
+    }
+    fn runs(&self) -> &dyn RunDao {
+        &self._runs
     }
 }
 
