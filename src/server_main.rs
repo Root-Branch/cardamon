@@ -10,7 +10,6 @@ use server::{
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, subscriber::set_global_default, Subscriber};
-use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -97,7 +96,6 @@ where
  */
 
 fn init_subscriber(subscriber: impl Subscriber + Sync + Send) {
-    LogTracer::init().expect("Failed to set logger");
     set_global_default(subscriber).expect("Failed to set subscriber");
 }
 

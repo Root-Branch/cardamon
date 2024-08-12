@@ -23,7 +23,7 @@
 #     required - false
 #   
 #   proccess.type: 
-#     type - "bare_metal" | "docker"
+#     type - "baremetal" | "docker"
 #     desc - the type of process which is being executed
 #     required - true
 #
@@ -59,7 +59,7 @@ name = "test_proc"
 up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
 down = "pkill {pid}"
 redirect.to = "file"
-process.type = "bare_metal"
+process.type = "baremetal"
 
 # Scenarios
 # ---------
