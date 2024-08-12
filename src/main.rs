@@ -1,13 +1,14 @@
 use std::path::Path;
 
 use cardamon::{
+    cleanup_stdout_stderr,
     config::{self, ProcessToObserve},
     data_access::LocalDAOService,
     init_config, run,
 };
 use clap::{Parser, Subcommand};
 use sqlx::{migrate::MigrateDatabase, SqlitePool};
-use tracing::Level;
+use tracing::{debug, info, Level};
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
@@ -58,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
     // Set up tracing subscriber
     let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
     tracing::subscriber::set_global_default(subscriber)?;
+    info!("Setup subscriber for logging");
 
     match args.command {
         Commands::Init => {
@@ -111,6 +113,8 @@ async fn main() -> anyhow::Result<()> {
                 execution_plan
                     .observe_external_process(ProcessToObserve::ContainerName(container_name));
             }
+            // Cleanup previosu runs stdout and stderr
+            cleanup_stdout_stderr()?;
             // run it!
             let observation_dataset = run(execution_plan, &data_access_service).await?;
 
@@ -133,7 +137,9 @@ async fn main() -> anyhow::Result<()> {
 }
 async fn create_db() -> anyhow::Result<SqlitePool> {
     let db_url = "sqlite://cardamon.db";
+    debug!("Creating database");
     if !sqlx::Sqlite::database_exists(db_url).await? {
+        debug!("Database does not exist, creating");
         sqlx::Sqlite::create_database(db_url).await?;
     }
 
@@ -146,8 +152,8 @@ async fn create_db() -> anyhow::Result<SqlitePool> {
         )
         // .connect(db_url) with wal and shm
         .await?;
-
     sqlx::migrate!().run(&db).await?;
+    debug!("Migrated database");
 
     Ok(db)
 }

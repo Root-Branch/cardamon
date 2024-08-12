@@ -12,7 +12,13 @@ use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToE
 use data_access::{iteration::Iteration, run::Run, DAOService};
 use dataset::{Dataset, DatasetBuilder};
 use serde_json::Value;
-use std::{collections::HashMap, fs::OpenOptions, io::Write, path::Path, vec};
+use std::{
+    collections::HashMap,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::Path,
+    vec,
+};
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
 use tracing::{debug, info};
@@ -155,7 +161,21 @@ pub async fn init_config() {
         }
     }
 }
-
+/// Deletes previous runs .stdout and .stderr
+/// Stdout and stderr capturing are append due to a scenario / observeration removing previous ones
+/// stdout and err
+pub fn cleanup_stdout_stderr() -> anyhow::Result<()> {
+    debug!("Cleaning up stdout and stderr");
+    let stdout = Path::new("./.stdout");
+    let stderr = Path::new("./.stderr");
+    if stdout.exists() {
+        fs::remove_file(stdout)?;
+    }
+    if stderr.exists() {
+        fs::remove_file(stderr)?;
+    }
+    Ok(())
+}
 /// Runs the given command as a detached processes. This function does not block because the
 /// process is managed by the OS and running separately from this thread.
 ///
