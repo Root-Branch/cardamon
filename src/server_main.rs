@@ -2,37 +2,29 @@ mod server;
 use axum::extract::FromRef;
 use axum::routing::{get, post, Router};
 use cardamon::data_access::LocalDAOService;
-use dotenv::dotenv;
 use http::Method;
 use server::{
     metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist},
     ui_routes::{get_database_url, get_scenario, get_scenarios},
 };
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
-use std::fs::File;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, subscriber::set_global_default, Subscriber};
-use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
-use tracing_subscriber::{fmt::writer::MakeWriterExt, layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv().ok();
-
-    let subscriber = get_subscriber("cardamon".into(), "debug".into());
+    let subscriber = get_subscriber("debug".into());
     init_subscriber(subscriber);
 
     let pool = create_db().await?;
     let data_access_service = LocalDAOService::new(pool.clone());
     let app = create_app(pool, data_access_service).await;
 
-    let listener = tokio::net::TcpListener::bind(format!(
-        "0.0.0.0:{}",
-        std::env::var("SERVER_PORT").expect("Server port not set")
-    ))
-    .await
-    .unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:7001"))
+        .await
+        .unwrap();
 
     info!("Starting cardamon server");
     axum::serve(listener, app).await.unwrap();
@@ -72,18 +64,15 @@ async fn create_app(pool: SqlitePool, dao_service: LocalDAOService) -> Router {
         .with_state(app_state)
 }
 
-fn get_subscriber(name: String, env_filter: String) -> impl Subscriber + Sync + Send {
+fn get_subscriber(env_filter: String) -> impl Subscriber + Sync + Send {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter));
 
-    let file_writer = File::create("debug.log").unwrap();
-    let stdout_writer = std::io::stdout;
-    let formatting_layer = BunyanFormattingLayer::new(name, file_writer.and(stdout_writer));
-
-    Registry::default()
-        .with(env_filter)
-        .with(JsonStorageLayer)
-        .with(formatting_layer)
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_target(false) // Optionally disable printing the target
+        .pretty()
+        .finish()
 }
 /*
  *

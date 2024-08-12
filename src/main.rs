@@ -57,7 +57,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Set up tracing subscriber
-    let subscriber = tracing_subscriber::fmt().with_max_level(level).finish();
+    let subscriber = tracing_subscriber::fmt()
+        .pretty()
+        .with_max_level(level)
+        .finish();
     tracing::subscriber::set_global_default(subscriber)?;
     info!("Setup subscriber for logging");
 

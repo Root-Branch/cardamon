@@ -6,7 +6,7 @@ use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use sysinfo::System;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is
 /// intended to be called from `metrics_logger::log_scenario` or `metrics_logger::log_live`
