@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO run (id, start_time, stop_time)\n            VALUES (?1, ?2, ?3)\n            ON CONFLICT(id) DO UPDATE SET\n                start_time = excluded.start_time,\n                stop_time = excluded.stop_time\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "584a486215645381cf289cce5b88697f1b0d4a7a9946900cff776443d0e87062"
+}

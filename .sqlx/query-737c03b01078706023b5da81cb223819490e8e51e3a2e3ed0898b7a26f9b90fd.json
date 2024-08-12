@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?1, ?2, ?3, ?4, ?5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "737c03b01078706023b5da81cb223819490e8e51e3a2e3ed0898b7a26f9b90fd"
+}

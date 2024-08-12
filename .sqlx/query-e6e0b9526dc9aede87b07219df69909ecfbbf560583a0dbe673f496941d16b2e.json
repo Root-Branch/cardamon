@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT scenario_name FROM iteration ORDER BY start_time LIMIT ?1 OFFSET ?2",
+  "describe": {
+    "columns": [
+      {
+        "name": "scenario_name",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e6e0b9526dc9aede87b07219df69909ecfbbf560583a0dbe673f496941d16b2e"
+}

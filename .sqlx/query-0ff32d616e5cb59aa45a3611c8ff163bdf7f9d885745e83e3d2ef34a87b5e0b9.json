@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT scenario_name FROM iteration WHERE scenario_name LIKE ?1",
+  "describe": {
+    "columns": [
+      {
+        "name": "scenario_name",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0ff32d616e5cb59aa45a3611c8ff163bdf7f9d885745e83e3d2ef34a87b5e0b9"
+}
