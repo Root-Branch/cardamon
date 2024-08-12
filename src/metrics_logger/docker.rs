@@ -78,7 +78,6 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
         sys.refresh_cpu();
         let core_count = num_cpus::get();
 
-        info!("{core_count}");
         for container in containers {
             if let Some(container_id) = container.id.as_ref() {
                 let container_name_with_slash = container
@@ -155,7 +154,7 @@ fn calculate_cpu_metrics(
     } else {
         0.0
     };
-    info!(
+    debug!(
         "Calculated CPU metrics for container {} ({}), cpu percentage: {}",
         container_id, container_name, cpu_usage
     );

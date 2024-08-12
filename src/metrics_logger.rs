@@ -89,7 +89,7 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
     if !pids.is_empty() {
         let token = token.clone();
         let shared_metrics_log = shared_metrics_log.clone();
-
+        tracing::debug!("Spawning bare metal thread");
         join_set.spawn(async move {
             tracing::info!("Logging PIDs: {:?}", pids);
             tokio::select! {

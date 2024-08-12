@@ -1,5 +1,6 @@
 use anyhow::Context;
 use async_trait::async_trait;
+use tracing::debug;
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize, sqlx::FromRow)]
 pub struct Metrics {
@@ -57,6 +58,7 @@ impl LocalDao {
 #[async_trait]
 impl MetricsDao for LocalDao {
     async fn fetch_within(&self, run: &str, from: i64, to: i64) -> anyhow::Result<Vec<Metrics>> {
+        debug!("Selecting metrics from timestamp {} to {}", from, to);
         sqlx::query_as!(
             Metrics,
             "SELECT * FROM metrics WHERE run_id = ?1 AND time_stamp >= ?2 AND time_stamp <= ?3",
@@ -70,6 +72,7 @@ impl MetricsDao for LocalDao {
     }
 
     async fn persist(&self, metrics: &Metrics) -> anyhow::Result<()> {
+        debug!("Persisting metrics with run_id {}", metrics.run_id);
         sqlx::query!(
             r#"
             INSERT INTO metrics (

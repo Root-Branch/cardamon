@@ -3,7 +3,7 @@ use std::path::Path;
 use cardamon::{
     cleanup_stdout_stderr,
     config::{self, ProcessToObserve},
-    data_access::LocalDAOService,
+    data_access::{DAOService, LocalDAOService, RemoteDAOService},
     init_config, run,
 };
 use clap::{Parser, Subcommand};
@@ -92,10 +92,14 @@ async fn main() -> anyhow::Result<()> {
                 Some(cfg) => cfg,
                 None => return Err(anyhow::anyhow!("No config file found for Run command")),
             };
-
-            // set up local data access
-            let pool = create_db().await?;
-            let data_access_service = LocalDAOService::new(pool);
+            let data_access_service: Box<dyn DAOService> = if config.metrics_server_url.is_some() {
+                Box::new(RemoteDAOService::new(
+                    &config.metrics_server_url.clone().unwrap(),
+                ))
+            } else {
+                let pool = create_db().await?;
+                Box::new(LocalDAOService::new(pool))
+            };
 
             // create an execution plan
             let mut execution_plan = if external_only {
@@ -116,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
             // Cleanup previosu runs stdout and stderr
             cleanup_stdout_stderr()?;
             // run it!
-            let observation_dataset = run(execution_plan, &data_access_service).await?;
+            let observation_dataset = run(execution_plan, &*data_access_service).await?;
 
             for scenario_dataset in observation_dataset.by_scenario().iter() {
                 println!("Scenario: {:?}", scenario_dataset.scenario_name());
