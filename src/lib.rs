@@ -12,10 +12,10 @@ use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToE
 use data_access::{iteration::Iteration, run::Run, DAOService};
 use dataset::{Dataset, DatasetBuilder};
 use serde_json::Value;
-use std::{collections::HashMap, fs::File, io::Write, path::Path, vec};
+use std::{collections::HashMap, fs::OpenOptions, io::Write, path::Path, vec};
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
-use tracing::info;
+use tracing::{debug, info};
 
 fn ask_for_cpu() -> String {
     loop {
@@ -185,9 +185,14 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
                 Redirect::Null => exec.stdout(NullFile).stderr(NullFile),
                 Redirect::Parent => exec,
                 Redirect::File => {
-                    let out_file = File::create(Path::new("./.stdout"))?;
-                    let err_file = File::create(Path::new("./.stderr"))?;
-
+                    let out_file = OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open("./.stdout")?;
+                    let err_file = OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open("./.stderr")?;
                     exec.stdout(Redirection::File(out_file))
                         .stderr(Redirection::File(err_file))
                 }
@@ -219,6 +224,7 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
 fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToObserve>> {
     match &proc.process {
         config::ProcessType::Docker { containers } => {
+            debug!("Running command {} in detached mode ( Docker ) ", proc.up);
             // run the command
             run_command_detached(&proc.up, &proc.redirect)?;
 
@@ -230,6 +236,10 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
         }
 
         config::ProcessType::BareMetal => {
+            debug!(
+                "Running command {} in detached mode ( Bare metal ) ",
+                proc.up
+            );
             // run the command
             let pid = run_command_detached(&proc.up, &proc.redirect)?;
 
