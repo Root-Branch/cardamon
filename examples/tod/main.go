@@ -38,7 +38,6 @@ func main() {
 }
 
 func getNotes(w http.ResponseWriter, r *http.Request) {
-	log.Println("Getting notes")
 	ctx := r.Context()
 	keys, err := redisClient.Keys(ctx, "*").Result()
 	if err != nil {
@@ -60,7 +59,6 @@ func getNotes(w http.ResponseWriter, r *http.Request) {
 }
 
 func getNote(w http.ResponseWriter, r *http.Request) {
-	log.Println("Getting note")
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	id := vars["id"]
@@ -78,7 +76,6 @@ func getNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func setNote(w http.ResponseWriter, r *http.Request) {
-	log.Println("Setting note")
 	ctx := r.Context()
 	var note Note
 	err := json.NewDecoder(r.Body).Decode(&note)
@@ -98,7 +95,6 @@ func setNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteNote(w http.ResponseWriter, r *http.Request) {
-	log.Println("Deleting note")
 	ctx := r.Context()
 	vars := mux.Vars(r)
 	id := vars["id"]
