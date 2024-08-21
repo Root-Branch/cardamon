@@ -7,9 +7,9 @@ use std::{
 };
 
 #[cfg(not(windows))]
-static EXAMPLE_CONFIG: &str = include_str!("data/cardamon.unix.toml");
+static EXAMPLE_CONFIG: &str = include_str!("templates/cardamon.unix.toml");
 #[cfg(windows)]
-static EXAMPLE_CONFIG: &str = include_str!("data/cardamon.win.toml");
+static EXAMPLE_CONFIG: &str = include_str!("templates/cardamon.win.toml");
 
 #[cfg(not(windows))]
 static LINE_ENDING: &str = "\n";
