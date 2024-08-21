@@ -1,12 +1,9 @@
 mod server;
-use axum::extract::FromRef;
+
 use axum::routing::{get, post, Router};
 use cardamon::data_access::LocalDAOService;
 use http::Method;
-use server::{
-    metric_routes::{fetch_within, persist_metrics, scenario_iteration_persist},
-    ui_routes::{get_database_url, get_scenario, get_scenarios},
-};
+use server::{iteration_routes, metric_routes, run_routes, scenario_routes, ui_routes};
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{info, subscriber::set_global_default, Subscriber};
@@ -18,10 +15,10 @@ async fn main() -> anyhow::Result<()> {
     init_subscriber(subscriber);
 
     let pool = create_db().await?;
-    let data_access_service = LocalDAOService::new(pool.clone());
-    let app = create_app(pool, data_access_service).await;
+    let dao_service = LocalDAOService::new(pool.clone());
+    let app = create_app(dao_service).await;
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:7001"))
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:7001".to_string())
         .await
         .unwrap();
 
@@ -30,37 +27,67 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-#[derive(Clone, FromRef)]
-struct AppState {
-    pool: SqlitePool,
-    dao_service: LocalDAOService,
-}
+
 // Keep seperated for integraion tests
-async fn create_app(pool: SqlitePool, dao_service: LocalDAOService) -> Router {
+async fn create_app(dao_service: LocalDAOService) -> Router {
     // Middleware later
     /*
     let protected = Router::new()
     .route("/user", get(routes::user::get_user))
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
-    let app_state = AppState { pool, dao_service };
     let ui_router = Router::new()
-        .route("/api/scenarios", get(get_scenarios))
-        .route("/api/database_url", get(get_database_url))
-        .route("/api/scenarios/:scenario_id", get(get_scenario));
+        .route("/api/scenarios", get(ui_routes::get_scenarios))
+        .route("/api/database_url", get(ui_routes::get_database_url))
+        .route("/api/scenarios/:scenario_id", get(ui_routes::get_scenario))
+        .with_state(dao_service.clone());
+
+    let metrics_router = Router::new()
+        .route("/api/metrics", post(metric_routes::persist_metrics))
+        .route("/api/metrics/:id", get(metric_routes::fetch_within))
+        .with_state(dao_service.clone());
+
+    let iteration_router = Router::new()
+        .route("/api/iterations", get(iteration_routes::fetch_runs_all))
+        .route(
+            "/api/iterations/in_range",
+            get(iteration_routes::fetch_runs_in_range),
+        )
+        .route(
+            "/api/iterations/last_n",
+            get(iteration_routes::fetch_runs_last_n),
+        )
+        .route("/api/iteration", post(iteration_routes::persist))
+        .with_state(dao_service.clone());
+
+    let run_router = Router::new()
+        .route("/api/run", post(run_routes::persist))
+        .with_state(dao_service.clone());
+
+    let scenario_router = Router::new()
+        .route("/api/scenarios", get(scenario_routes::fetch_all))
+        .route("/api/scenarios/in_run", get(scenario_routes::fetch_in_run))
+        .route(
+            "/api/scenarios/in_range",
+            get(scenario_routes::fetch_in_range),
+        )
+        .route(
+            "/api/scenarios/by_name/:name",
+            get(scenario_routes::fetch_by_name),
+        )
+        .with_state(dao_service.clone());
 
     Router::new()
         .merge(ui_router)
-        .route("/cpu_metrics", post(persist_metrics))
-        .route("/cpu_metrics/:id", get(fetch_within))
-        //.route("/cpu_metrics/:id", delete(delete_metrics)) removed for now
-        .route("/scenario", post(scenario_iteration_persist))
+        .merge(metrics_router)
+        .merge(iteration_router)
+        .merge(run_router)
+        .merge(scenario_router)
         .layer(
             CorsLayer::new()
                 .allow_methods([Method::GET, Method::POST])
                 .allow_origin(Any),
         )
-        .with_state(app_state)
 }
 
 fn get_subscriber(env_filter: String) -> impl Subscriber + Sync + Send {

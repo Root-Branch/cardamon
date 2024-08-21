@@ -26,7 +26,7 @@ pub async fn get_scenarios(
     let begin = params.from_date.unwrap_or(0);
     let end = params
         .to_date
-        .unwrap_or_else(|| Utc::now().timestamp_millis().try_into().unwrap());
+        .unwrap_or_else(|| Utc::now().timestamp_millis());
     let page = params.page.unwrap_or(1);
     let page = page - 1; // DB needs -1 indexing
     let limit = params.limit.unwrap_or(5);
@@ -64,7 +64,7 @@ pub async fn get_scenarios(
         for run in &last_runs {
             scenario_map
                 .entry(run.iteration().run_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(Iteration {
                     run_id: run.iteration().run_id.clone(),
                     scenario_name: run.iteration().scenario_name.clone(),
@@ -145,6 +145,7 @@ pub async fn get_scenarios(
     );
     Ok(Json(response))
 }
+
 #[instrument(name = "Get specific scenario")]
 pub async fn get_scenario(
     State(dao_service): State<LocalDAOService>,
@@ -155,10 +156,7 @@ pub async fn get_scenario(
     let limit = params.limit.unwrap_or(5);
 
     // Fetch all unique run_ids for the scenario
-    let all_run_ids = dao_service
-        .fetch_unique_run_ids(&scenario_id)
-        .await
-        .map_err(|e| ServerError::InternalServerError(e.to_string()))?;
+    let all_run_ids = dao_service.fetch_unique_run_ids(&scenario_id).await?;
 
     // Calculate pagination
     let total_runs = all_run_ids.len();
@@ -177,16 +175,14 @@ pub async fn get_scenario(
     for run_id in paginated_run_ids {
         let iterations = dao_service
             .fetch_by_scenario_and_run(&scenario_id, run_id)
-            .await
-            .map_err(|e| ServerError::InternalServerError(e.to_string()))?;
+            .await?;
 
         let mut run_iterations = Vec::new();
         for iteration in iterations {
             let metrics = dao_service
                 .metrics()
                 .fetch_within(run_id, iteration.start_time, iteration.stop_time)
-                .await
-                .map_err(|e| ServerError::InternalServerError(e.to_string()))?;
+                .await?;
 
             let usages: Vec<Usage> = metrics
                 .iter()

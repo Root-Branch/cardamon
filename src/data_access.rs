@@ -75,10 +75,10 @@ impl DAOService for LocalDAOService {
 }
 
 pub struct RemoteDAOService {
-    _scenarios: scenario::RemoteDao,
-    _iterations: iteration::RemoteDao,
-    _metrics: metrics::RemoteDao,
-    _runs: run::RemoteDao,
+    scenarios: scenario::RemoteDao,
+    iterations: iteration::RemoteDao,
+    metrics: metrics::RemoteDao,
+    runs: run::RemoteDao,
 }
 impl RemoteDAOService {
     pub fn new(base_url: &str) -> Self {
@@ -88,27 +88,27 @@ impl RemoteDAOService {
         let runs = run::RemoteDao::new(base_url);
 
         Self {
-            _scenarios: scenarios,
-            _iterations: iterations,
-            _metrics: metrics,
-            _runs: runs,
+            scenarios,
+            iterations,
+            metrics,
+            runs,
         }
     }
 }
 impl DAOService for RemoteDAOService {
     fn scenarios(&self) -> &dyn ScenarioDao {
-        &self._scenarios
+        &self.scenarios
     }
 
     fn iterations(&self) -> &dyn IterationDao {
-        &self._iterations
+        &self.iterations
     }
 
     fn metrics(&self) -> &dyn MetricsDao {
-        &self._metrics
+        &self.metrics
     }
     fn runs(&self) -> &dyn RunDao {
-        &self._runs
+        &self.runs
     }
 }
 

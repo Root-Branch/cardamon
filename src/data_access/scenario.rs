@@ -138,39 +138,87 @@ impl ScenarioDao for LocalDao {
 }
 
 pub struct RemoteDao {
-    _base_url: String,
+    pub base_url: String,
+    pub client: reqwest::Client,
 }
 impl RemoteDao {
     pub fn new(base_url: &str) -> Self {
         Self {
-            _base_url: base_url.to_string(),
+            base_url: base_url.to_string(),
+            client: reqwest::Client::new(),
         }
     }
 }
 #[async_trait]
 impl ScenarioDao for RemoteDao {
-    async fn fetch_all(&self, _page: &Option<Page>) -> anyhow::Result<Vec<String>> {
-        todo!()
+    async fn fetch_all(&self, page: &Option<Page>) -> anyhow::Result<Vec<String>> {
+        let page_qp = page
+            .as_ref()
+            .map(|page| format!("?page_size={}&page_num={}", page.size, page.num))
+            .unwrap_or_default();
+
+        self.client
+            .get(format!("{}/scenarios{}", self.base_url, page_qp))
+            .send()
+            .await?
+            .json::<Vec<String>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 
-    async fn fetch_in_run(&self, _run: &str, _page: &Option<Page>) -> anyhow::Result<Vec<String>> {
-        todo!()
+    async fn fetch_in_run(&self, run: &str, page: &Option<Page>) -> anyhow::Result<Vec<String>> {
+        let page_qp = page
+            .as_ref()
+            .map(|page| format!("&page_size={}&page_num={}", page.size, page.num))
+            .unwrap_or_default();
+
+        self.client
+            .get(format!(
+                "{}/scenarios/in_run?run={}{}",
+                self.base_url, run, page_qp
+            ))
+            .send()
+            .await?
+            .json::<Vec<String>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 
     async fn fetch_in_range(
         &self,
-        _from: i64,
-        _to: i64,
-        _page: &Option<Page>,
+        from: i64,
+        to: i64,
+        page: &Option<Page>,
     ) -> anyhow::Result<Vec<String>> {
-        todo!()
+        let page_qp = page
+            .as_ref()
+            .map(|page| format!("&page_size={}&page_num={}", page.size, page.num))
+            .unwrap_or_default();
+
+        self.client
+            .get(format!(
+                "{}/scenarios/in_range?from={}&to={}{}",
+                self.base_url, from, to, page_qp
+            ))
+            .send()
+            .await?
+            .json::<Vec<String>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 
-    async fn fetch_by_name(
-        &self,
-        _name: &str,
-        _page: &Option<Page>,
-    ) -> anyhow::Result<Vec<String>> {
-        todo!()
+    async fn fetch_by_name(&self, name: &str, page: &Option<Page>) -> anyhow::Result<Vec<String>> {
+        let page_qp = page
+            .as_ref()
+            .map(|page| format!("?page_size={}&page_num={}", page.size, page.num))
+            .unwrap_or_default();
+
+        self.client
+            .get(format!("{}/scenarios/{}{}", self.base_url, name, page_qp))
+            .send()
+            .await?
+            .json::<Vec<String>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 }

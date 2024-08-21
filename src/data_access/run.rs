@@ -21,7 +21,7 @@ impl Run {
 #[async_trait]
 pub trait RunDao {
     /// Persist a run object to the db.
-    async fn persist_run(&self, run: &Run) -> anyhow::Result<()>;
+    async fn persist(&self, run: &Run) -> anyhow::Result<()>;
 }
 
 // //////////////////////////////////////
@@ -40,7 +40,7 @@ impl LocalDao {
 
 #[async_trait]
 impl RunDao for LocalDao {
-    async fn persist_run(&self, run: &Run) -> anyhow::Result<()> {
+    async fn persist(&self, run: &Run) -> anyhow::Result<()> {
         sqlx::query!(
             r#"
             INSERT INTO run (id, start_time, stop_time)
@@ -64,24 +64,29 @@ impl RunDao for LocalDao {
 // RemoteDao
 
 pub struct RemoteDao {
-    _base_url: String,
-    _client: reqwest::Client,
+    base_url: String,
+    client: reqwest::Client,
 }
 
 impl RemoteDao {
     pub fn new(base_url: &str) -> Self {
         let base_url = base_url.strip_suffix('/').unwrap_or(base_url);
         Self {
-            _base_url: String::from(base_url),
-            _client: reqwest::Client::new(),
+            base_url: String::from(base_url),
+            client: reqwest::Client::new(),
         }
     }
 }
 
 #[async_trait]
 impl RunDao for RemoteDao {
-    async fn persist_run(&self, _run: &Run) -> anyhow::Result<()> {
-        todo!("Implement persist_run for RemoteDao")
+    async fn persist(&self, run: &Run) -> anyhow::Result<()> {
+        self.client
+            .put(format!("{}/run", self.base_url))
+            .json(run)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!(err))
     }
 }
-

@@ -306,8 +306,8 @@ async fn run_scenario<'a>(
             run_id,
             &scenario_to_execute.scenario.name,
             scenario_to_execute.iteration as i64,
-            start as i64,
-            stop as i64,
+            start,
+            stop,
         );
         Ok(scenario_iteration)
     } else {
@@ -424,7 +424,7 @@ pub async fn run<'a>(
                                                        // timezones
         dao_service
             .runs()
-            .persist_run(&Run {
+            .persist(&Run {
                 id: run_id.clone(),
                 start_time,
                 stop_time: Some(stop_time),

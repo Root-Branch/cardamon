@@ -222,44 +222,73 @@ impl IterationDao for LocalDao {
 // RemoteDao
 
 pub struct RemoteDao {
-    _base_url: String,
-    _client: reqwest::Client,
+    pub base_url: String,
+    pub client: reqwest::Client,
 }
 impl RemoteDao {
     pub fn new(base_url: &str) -> Self {
         let base_url = base_url.strip_suffix('/').unwrap_or(base_url);
         Self {
-            _base_url: String::from(base_url),
-            _client: reqwest::Client::new(),
+            base_url: String::from(base_url),
+            client: reqwest::Client::new(),
         }
     }
 }
 #[async_trait]
 impl IterationDao for RemoteDao {
-    async fn fetch_runs_all(
-        &self,
-        _scenario: &str,
-        _page: &Page,
-    ) -> anyhow::Result<Vec<Iteration>> {
-        todo!()
+    async fn fetch_runs_all(&self, scenario: &str, page: &Page) -> anyhow::Result<Vec<Iteration>> {
+        self.client
+            .get(format!(
+                "{}/iterations?scenario={}&page_size={}&page_num={}",
+                self.base_url, scenario, page.size, page.num
+            ))
+            .send()
+            .await?
+            .json::<Vec<Iteration>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 
     async fn fetch_runs_in_range(
         &self,
-        _scenario: &str,
-        _from: i64,
-        _to: i64,
-        _page: &Page,
+        scenario: &str,
+        from: i64,
+        to: i64,
+        page: &Page,
     ) -> anyhow::Result<Vec<Iteration>> {
-        todo!()
+        self.client
+            .get(format!(
+                "{}/iterations/in_range?scenario={}&from{}&to={}&page_size={}&page_num={}",
+                self.base_url, scenario, from, to, page.size, page.num
+            ))
+            .send()
+            .await?
+            .json::<Vec<Iteration>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 
-    async fn fetch_runs_last_n(&self, _scenario: &str, _n: u32) -> anyhow::Result<Vec<Iteration>> {
-        todo!()
+    async fn fetch_runs_last_n(&self, scenario: &str, n: u32) -> anyhow::Result<Vec<Iteration>> {
+        self.client
+            .get(format!(
+                "{}/iterations/last_n/?scenario={}&last_n={}",
+                self.base_url, scenario, n
+            ))
+            .send()
+            .await?
+            .json::<Vec<Iteration>>()
+            .await
+            .map_err(|err| anyhow::anyhow!(err))
     }
 
-    async fn persist(&self, _iteration: &Iteration) -> anyhow::Result<()> {
-        todo!()
+    async fn persist(&self, iteration: &Iteration) -> anyhow::Result<()> {
+        self.client
+            .put(format!("{}/iteration", self.base_url))
+            .json(iteration)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!(err))
     }
 }
 
