@@ -1,12 +1,9 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 use crate::metrics::{CpuMetrics, MetricsLog};
 use chrono::Utc;
-use std::sync::{Arc, Mutex};
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 use sysinfo::{Pid, System};
 use tokio::time::Duration;
 
@@ -22,7 +19,7 @@ use tokio::time::Duration;
 ///
 /// * `pids` - The process ids to observe
 /// * `metrics_log` - A log of all observed metrics. Another thread should periodically save and
-/// flush this shared log.
+///                   flush this shared log.
 ///
 /// # Returns
 ///
@@ -70,7 +67,11 @@ async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics
         let process_name: String = process
             .exe()
             .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| process.name().to_string());
+            .unwrap_or_else(|| {
+                let process_name = process.name().to_os_string();
+                let name_str = process_name.to_string_lossy();
+                name_str.deref().to_string()
+            });
         let metrics = CpuMetrics {
             process_id: format!("{pid}"),
             process_name,

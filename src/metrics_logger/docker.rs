@@ -20,7 +20,7 @@ use tracing::{debug, error, warn};
 ///
 /// * `container_names` - The names of the containers to observe
 /// * `metrics_log` - A log of all observed metrics. Another thread should periodically save and
-/// flush this shared log.
+///                   flush this shared log.
 ///
 /// # Returns
 ///
@@ -75,7 +75,7 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
             continue;
         }
         let mut sys = System::new_all();
-        sys.refresh_cpu();
+        sys.refresh_cpu_all();
         let core_count = num_cpus::get();
 
         for container in containers {
@@ -359,7 +359,7 @@ CMD ["sleep", "infinity"]
         // ( Plus it sets the "grace" period docker has to 0, immediately stopping it )
         docker
             .remove_container(
-                &container_id,
+                container_id,
                 Some(RemoveContainerOptions {
                     force: true,
                     v: true,
@@ -371,7 +371,7 @@ CMD ["sleep", "infinity"]
 
         docker
             .remove_image(
-                &image_id,
+                image_id,
                 Some(RemoveImageOptions {
                     force: true,
                     noprune: false,

@@ -1,5 +1,7 @@
-use crate::data_access::{iteration::Iteration, metrics::Metrics, pagination::Page, DAOService};
+use crate::dao::{self, pagination::Page};
+use entities::{iteration, metrics};
 use itertools::{Itertools, MinMaxResult};
+use sea_orm::DatabaseConnection;
 use std::collections::{hash_map::Entry, HashMap};
 
 pub enum ScenarioSelection {
@@ -87,19 +89,20 @@ pub enum RunSelection {
 ///     .await?
 ///```
 ///
+
 pub struct DatasetBuilder<'a> {
-    dao_service: &'a dyn DAOService,
+    db: &'a DatabaseConnection,
 }
 impl<'a> DatasetBuilder<'a> {
-    pub fn new(dao_service: &'a dyn DAOService) -> Self {
-        Self { dao_service }
+    pub fn new(db: &'a DatabaseConnection) -> Self {
+        DatasetBuilder { db }
     }
 
     /// Returns a single scenario.
     pub fn scenario(&self, scenario: &str) -> DatasetRow {
         DatasetRow {
             scenario: scenario.to_string(),
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 
@@ -107,15 +110,15 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_all(&self) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::All,
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 
     /// Returns all scenarios that were executed in a single run.
-    pub fn scenarios_in_run(&self, run: &str) -> DatasetRowPager {
+    pub fn scenarios_in_run(&self, run: i32) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::InRun(run.to_string()),
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 
@@ -127,7 +130,7 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_in_range(&self, from: i64, to: i64) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::InRange { from, to },
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 
@@ -137,7 +140,7 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_by_name(&self, name: &str) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::Search(name.to_string()),
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 }
@@ -148,7 +151,7 @@ impl<'a> DatasetBuilder<'a> {
 /// It provides functions to select a subset within that range of scenarios.
 pub struct DatasetRowPager<'a> {
     scenario_selection: ScenarioSelection,
-    dao_service: &'a dyn DAOService,
+    db: &'a DatabaseConnection,
 }
 impl<'a> DatasetRowPager<'a> {
     /// Returns a DatasetRows object which defined the full set of scenarios defined by this
@@ -157,13 +160,13 @@ impl<'a> DatasetRowPager<'a> {
         DatasetRows {
             scenario_selection: self.scenario_selection,
             scenario_page: None,
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 
     /// Returns a DatasetRows object which defines a subset of the scenarios defined by this
     /// DatasetRowPager.
-    pub fn page(self, page_size: u32, page_num: u32) -> DatasetRows<'a> {
+    pub fn page(self, page_size: u64, page_num: u64) -> DatasetRows<'a> {
         let scenario_page = Page {
             size: page_size,
             num: page_num,
@@ -172,7 +175,7 @@ impl<'a> DatasetRowPager<'a> {
         DatasetRows {
             scenario_selection: self.scenario_selection,
             scenario_page: Some(scenario_page),
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 }
@@ -197,49 +200,32 @@ impl<'a> DatasetRowPager<'a> {
 pub struct DatasetRows<'a> {
     scenario_selection: ScenarioSelection,
     scenario_page: Option<Page>,
-    dao_service: &'a dyn DAOService,
+    db: &'a DatabaseConnection,
 }
 impl<'a> DatasetRows<'a> {
     /// Returns a Dataset which contains the iterations and metrics collected in the last 'n' runs
     /// of each scenario.
     ///
     /// This function is async as it uses the dao_service to fetch the results from the db.
-    pub async fn last_n_runs(&self, n: u32) -> anyhow::Result<Dataset> {
+    pub async fn last_n_runs(&self, n: u64) -> anyhow::Result<Dataset> {
         let scenarios = match &self.scenario_selection {
-            ScenarioSelection::All => {
-                self.dao_service
-                    .scenarios()
-                    .fetch_all(&self.scenario_page)
-                    .await
-            }
+            ScenarioSelection::All => dao::scenario::fetch_all(&self.scenario_page, self.db).await,
             ScenarioSelection::Search(name) => {
-                self.dao_service
-                    .scenarios()
-                    .fetch_by_name(name, &self.scenario_page)
-                    .await
+                dao::scenario::fetch_by_name(name, &self.scenario_page, self.db).await
             }
             ScenarioSelection::InRun(run) => {
-                self.dao_service
-                    .scenarios()
-                    .fetch_in_run(run, &self.scenario_page)
-                    .await
+                dao::scenario::fetch_in_run(run, &self.scenario_page, self.db).await
             }
             ScenarioSelection::InRange { from, to } => {
-                self.dao_service
-                    .scenarios()
-                    .fetch_in_range(*from, *to, &self.scenario_page)
-                    .await
+                dao::scenario::fetch_in_range(*from, *to, &self.scenario_page, self.db).await
             }
         }?;
 
         // for each scenario get the associated iterations in the last n runs
         let mut iterations = vec![];
         for scenario in scenarios {
-            let scenario_iterations = self
-                .dao_service
-                .iterations()
-                .fetch_runs_last_n(&scenario, n)
-                .await?;
+            let scenario_iterations =
+                dao::iteration::fetch_runs_last_n(&scenario.scenario_name, n, self.db).await?;
             iterations.extend(scenario_iterations);
         }
 
@@ -247,11 +233,8 @@ impl<'a> DatasetRows<'a> {
         // TODO: read from cache table first
         let mut iterations_with_metrics = vec![];
         for it in iterations {
-            let metrics = self
-                .dao_service
-                .metrics()
-                .fetch_within(&it.run_id, it.start_time, it.stop_time)
-                .await?;
+            let metrics =
+                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, self.db).await?;
             iterations_with_metrics.push(IterationWithMetrics::new(it, metrics));
         }
 
@@ -265,7 +248,7 @@ impl<'a> DatasetRows<'a> {
 /// This object provides functions for defining a range of runs to include for the scenario.
 pub struct DatasetRow<'a> {
     scenario: String,
-    dao_service: &'a dyn DAOService,
+    db: &'a DatabaseConnection,
 }
 impl<'a> DatasetRow<'a> {
     /// Return a DataColPager which includes all the runs for this scenario.
@@ -273,7 +256,7 @@ impl<'a> DatasetRow<'a> {
         DatasetColPager {
             scenario: self.scenario,
             run_selection: RunSelection::All,
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 
@@ -287,7 +270,7 @@ impl<'a> DatasetRow<'a> {
         DatasetColPager {
             scenario: self.scenario,
             run_selection: RunSelection::InRange { from, to },
-            dao_service: self.dao_service,
+            db: self.db,
         }
     }
 }
@@ -299,24 +282,19 @@ impl<'a> DatasetRow<'a> {
 pub struct DatasetColPager<'a> {
     scenario: String,
     run_selection: RunSelection,
-    dao_service: &'a dyn DAOService,
+    db: &'a DatabaseConnection,
 }
 impl<'a> DatasetColPager<'a> {
-    pub async fn page(&self, page_size: u32, page_num: u32) -> anyhow::Result<Dataset> {
+    pub async fn page(&self, page_size: u64, page_num: u64) -> anyhow::Result<Dataset> {
         let page = Page::new(page_size, page_num);
 
         let iterations = match self.run_selection {
             RunSelection::All => {
-                self.dao_service
-                    .iterations()
-                    .fetch_runs_all(&self.scenario, &page)
-                    .await
+                dao::iteration::fetch_runs_all(&self.scenario, &Some(page), self.db).await
             }
 
             RunSelection::InRange { from, to } => {
-                self.dao_service
-                    .iterations()
-                    .fetch_runs_in_range(&self.scenario, from, to, &page)
+                dao::iteration::fetch_runs_in_range(&self.scenario, from, to, &Some(page), self.db)
                     .await
             }
         }?;
@@ -325,11 +303,8 @@ impl<'a> DatasetColPager<'a> {
         // TODO: read from cache table first
         let mut iterations_with_metrics = vec![];
         for it in iterations {
-            let metrics = self
-                .dao_service
-                .metrics()
-                .fetch_within(&it.run_id, it.start_time, it.stop_time)
-                .await?;
+            let metrics =
+                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, self.db).await?;
             iterations_with_metrics.push(IterationWithMetrics::new(it, metrics));
         }
 
@@ -347,24 +322,24 @@ impl<'a> DatasetColPager<'a> {
 /// Associates a single ScenarioIteration with all the metrics captured for it.
 #[derive(Debug)]
 pub struct IterationWithMetrics {
-    iteration: Iteration,
-    metrics: Vec<Metrics>,
+    iteration: iteration::Model,
+    metrics: Vec<metrics::Model>,
 }
 impl IterationWithMetrics {
-    pub fn new(iteration: Iteration, metrics: Vec<Metrics>) -> Self {
+    pub fn new(iteration: iteration::Model, metrics: Vec<metrics::Model>) -> Self {
         Self { iteration, metrics }
     }
 
-    pub fn iteration(&self) -> &Iteration {
+    pub fn iteration(&self) -> &iteration::Model {
         &self.iteration
     }
 
-    pub fn metrics(&self) -> &[Metrics] {
+    pub fn metrics(&self) -> &[metrics::Model] {
         &self.metrics
     }
 
     pub fn accumulate_by_process(&self) -> Vec<ProcessMetrics> {
-        let mut metrics_by_process: HashMap<String, Vec<&Metrics>> = HashMap::new();
+        let mut metrics_by_process: HashMap<String, Vec<&metrics::Model>> = HashMap::new();
         for metric in self.metrics.iter() {
             let proc_id = metric.process_id.clone();
             metrics_by_process
@@ -564,7 +539,7 @@ impl<'a> ScenarioDataset<'a> {
 
                 RunDataset {
                     scenario_name: self.scenario_name,
-                    run_id,
+                    run_id: *run_id,
                     data,
                 }
             })
@@ -579,7 +554,7 @@ impl<'a> ScenarioDataset<'a> {
 #[derive(Debug)]
 pub struct RunDataset<'a> {
     scenario_name: &'a str,
-    run_id: &'a str,
+    run_id: i32,
     data: Vec<&'a IterationWithMetrics>,
 }
 impl<'a> RunDataset<'a> {
@@ -587,7 +562,7 @@ impl<'a> RunDataset<'a> {
         self.scenario_name
     }
 
-    pub fn run_id(&'a self) -> &'a str {
+    pub fn run_id(&'a self) -> i32 {
         self.run_id
     }
 
@@ -655,7 +630,7 @@ impl<'a> RunDataset<'a> {
 
 #[cfg(test)]
 mod tests {
-    //     use crate::data_access::{DataAccessService, LocalDataAccessService};
+    //     use crate::dao::{DataAccessService, LocalDataAccessService};
     //     use sqlx::SqlitePool;
     //
     //     #[sqlx::test(
@@ -667,8 +642,8 @@ mod tests {
     //         )
     //     )]
     //     async fn datasets_work(pool: SqlitePool) -> anyhow::Result<()> {
-    //         let data_access_service = LocalDataAccessService::new(pool.clone());
-    //         let observation_dataset = data_access_service
+    //         let dao_service = LocalDataAccessService::new(pool.clone());
+    //         let observation_dataset = dao_service
     //             .fetch_observation_dataset(vec!["scenario_2"], 2)
     //             .await?;
     //

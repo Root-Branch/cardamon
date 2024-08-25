@@ -1,21 +1,19 @@
-use std::path::Path;
-
+use anyhow::Context;
 use cardamon::{
     cleanup_stdout_stderr,
     config::{self, ProcessToObserve},
-    data_access::{DAOService, LocalDAOService, RemoteDAOService},
-    init_config, run,
+    init_config, run, server,
 };
 use clap::{Parser, Subcommand};
-use sqlx::{migrate::MigrateDatabase, SqlitePool};
-use tracing::{debug, info, Level};
+use dotenvy::dotenv;
+use migration::{Migrator, MigratorTrait};
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
+use std::{env, path::Path};
+use tracing::{trace, Level};
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
 pub struct Cli {
-    #[arg(short, long)]
-    pub verbose: bool,
-
     #[arg(short, long)]
     pub file: Option<String>,
 
@@ -42,32 +40,91 @@ pub enum Commands {
         #[arg(long)]
         external_only: bool,
     },
+    Ui {
+        #[arg(short, long)]
+        port: Option<u32>
+    },
     Init,
+}
+
+async fn db_connect() -> anyhow::Result<DatabaseConnection> {
+    let database_url = &env::var("DATABASE_URL").unwrap_or("sqlite://cardamon.db?mode=rwc".to_string());
+    let database_name = &env::var("DATABASE_NAME").unwrap_or("".to_string());
+
+    let db = Database::connect(database_url).await?;
+    match db.get_database_backend() {
+        DbBackend::Sqlite => Ok(db),
+
+        DbBackend::Postgres => {
+            db.execute(Statement::from_string(
+                db.get_database_backend(),
+                format!("CREATE DATABASE \"{}\";", database_name),
+            ))
+            .await
+            .ok();
+
+            let url = format!("{}/{}", database_url, database_name);
+            Database::connect(&url)
+                .await
+                .context("Error creating postgresql database.")
+        }
+
+        DbBackend::MySql => {
+            db.execute(Statement::from_string(
+                db.get_database_backend(),
+                format!("CREATE DATABASE IF NOT EXISTS `{}`;", database_name),
+            ))
+            .await?;
+
+            let url = format!("{}/{}", database_url, database_name);
+            Database::connect(&url)
+                .await
+                .context("Error creating mysql database.")
+        }
+    }
+}
+
+async fn db_migrate(db_conn: &DatabaseConnection) -> anyhow::Result<()> {
+    Migrator::up(db_conn, None)
+        .await
+        .context("Error migrating database.")
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // read .env file if it exists
+    dotenv().ok();
+
     // Parse clap args
     let args = Cli::parse();
 
     // Set the debug level, prioritizing command-line args over config
-    let level = match args.verbose {
-        true => Level::DEBUG,
-        false => Level::INFO,
+    let log_level = match env::var("LOG_LEVEL").unwrap_or("INFO".to_string()).as_str() {
+        "DEBUG" => Level::DEBUG,
+        "INFO" => Level::INFO,
+        "WARN" => Level::WARN,
+        "ERROR" => Level::ERROR,
+        "TRACE" => Level::TRACE,
+        _ => Level::INFO,
     };
 
     // Set up tracing subscriber
     let subscriber = tracing_subscriber::fmt()
         .pretty()
-        .with_max_level(level)
+        .with_max_level(log_level)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
-    info!("Setup subscriber for logging");
+    trace!("Setup subscriber for logging");
+
+    // connect to the database and run migrations
+    let db_conn = db_connect().await?;
+    db_migrate(&db_conn).await?;
 
     match args.command {
         Commands::Init => {
             init_config().await;
         }
+
         Commands::Run {
             name,
             pids,
@@ -78,31 +135,8 @@ async fn main() -> anyhow::Result<()> {
             let config = match &args.file {
                 Some(path) => config::Config::try_from_path(Path::new(path)),
                 None => config::Config::try_from_path(Path::new("./cardamon.toml")),
-            };
-            let config = match config {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    eprintln!(
-                        "Error loading configuration, please run `cardamon init`: {}",
-                        e
-                    );
-                    None
-                }
-            };
-
-            // Ensure we have a config for the Run command
-            let config = match config {
-                Some(cfg) => cfg,
-                None => return Err(anyhow::anyhow!("No config file found for Run command")),
-            };
-            let data_access_service: Box<dyn DAOService> = if config.metrics_server_url.is_some() {
-                Box::new(RemoteDAOService::new(
-                    &config.metrics_server_url.clone().unwrap(),
-                ))
-            } else {
-                let pool = create_db().await?;
-                Box::new(LocalDAOService::new(pool))
-            };
+            }
+            .context("Error loading configuration, please run `cardamon init`")?;
 
             // create an execution plan
             let mut execution_plan = if external_only {
@@ -120,10 +154,11 @@ async fn main() -> anyhow::Result<()> {
                 execution_plan
                     .observe_external_process(ProcessToObserve::ContainerName(container_name));
             }
-            // Cleanup previosu runs stdout and stderr
+            // Cleanup previous runs stdout and stderr
             cleanup_stdout_stderr()?;
+
             // run it!
-            let observation_dataset = run(execution_plan, &*data_access_service).await?;
+            let observation_dataset = run(execution_plan, &db_conn).await?;
 
             for scenario_dataset in observation_dataset.by_scenario().iter() {
                 println!("Scenario: {:?}", scenario_dataset.scenario_name());
@@ -137,30 +172,13 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+        },
+
+        Commands::Ui { port } => {
+            let port = port.unwrap_or(1337);
+            server::start(port, &db_conn).await?
         }
     }
 
     Ok(())
-}
-async fn create_db() -> anyhow::Result<SqlitePool> {
-    let db_url = "sqlite://cardamon.db";
-    debug!("Creating database");
-    if !sqlx::Sqlite::database_exists(db_url).await? {
-        debug!("Database does not exist, creating");
-        sqlx::Sqlite::create_database(db_url).await?;
-    }
-
-    let db = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(4)
-        .connect_with(
-            sqlx::sqlite::SqliteConnectOptions::new()
-                .filename("cardamon.db")
-                .pragma("journal_mode", "DELETE"), // Disable WAL mode
-        )
-        // .connect(db_url) with wal and shm
-        .await?;
-    sqlx::migrate!().run(&db).await?;
-    debug!("Migrated database");
-
-    Ok(db)
 }
