@@ -1,4 +1,4 @@
-use entities::metrics;
+use crate::entities::metrics;
 use sea_orm::ActiveValue;
 
 #[derive(Debug)]

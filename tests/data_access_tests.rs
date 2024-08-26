@@ -1,9 +1,11 @@
 #![allow(unused_imports, dead_code)]
 
 use anyhow::{self, Context};
-use cardamon::dao;
+use cardamon::{
+    dao,
+    migrations::{Migrator, MigratorTrait},
+};
 use itertools::*;
-use migration::{Migrator, MigratorTrait};
 use sea_orm::{
     entity::*, error::*, query::*, sea_query, tests_cfg::*, Database, DatabaseBackend,
     DatabaseConnection, DbConn,

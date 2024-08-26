@@ -1,4 +1,4 @@
-use crate::m20240822_095823_create_run_table::Run;
+use super::m20240822_095823_create_run_table::Run;
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]

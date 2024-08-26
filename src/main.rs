@@ -2,11 +2,12 @@ use anyhow::Context;
 use cardamon::{
     cleanup_stdout_stderr,
     config::{self, ProcessToObserve},
-    init_config, run, server,
+    init_config,
+    migrations::{Migrator, MigratorTrait},
+    run, server,
 };
 use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
-use migration::{Migrator, MigratorTrait};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 use std::{env, path::Path};
 use tracing::{trace, Level};
@@ -42,13 +43,14 @@ pub enum Commands {
     },
     Ui {
         #[arg(short, long)]
-        port: Option<u32>
+        port: Option<u32>,
     },
     Init,
 }
 
 async fn db_connect() -> anyhow::Result<DatabaseConnection> {
-    let database_url = &env::var("DATABASE_URL").unwrap_or("sqlite://cardamon.db?mode=rwc".to_string());
+    let database_url =
+        &env::var("DATABASE_URL").unwrap_or("sqlite://cardamon.db?mode=rwc".to_string());
     let database_name = &env::var("DATABASE_NAME").unwrap_or("".to_string());
 
     let db = Database::connect(database_url).await?;
@@ -172,7 +174,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-        },
+        }
 
         Commands::Ui { port } => {
             let port = port.unwrap_or(1337);

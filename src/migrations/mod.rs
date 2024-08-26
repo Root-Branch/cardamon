@@ -1,8 +1,8 @@
-pub use sea_orm_migration::prelude::*;
+pub mod m20240822_095823_create_run_table;
+pub mod m20240822_095830_create_metrics_table;
+pub mod m20240822_095838_create_iteration_table;
 
-mod m20240822_095823_create_run_table;
-mod m20240822_095830_create_metrics_table;
-mod m20240822_095838_create_iteration_table;
+pub use sea_orm_migration::prelude::*;
 
 pub struct Migrator;
 

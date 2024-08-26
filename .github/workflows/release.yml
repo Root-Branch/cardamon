@@ -21,16 +21,8 @@ jobs:
 
       - name: Check version numbers match
         run: |
-          # Check if cardamon version has been bumped
           card_ver=v$(cargo metadata --format-version=1 --no-deps | jq '.packages[0].version' | tr -d '"')
           if [[ $card_ver != "${{ github.ref_name }}" ]]; then exit 1; fi
-
-          # Check if workspace members have also been bumped
-          workspace_members=($(cargo metadata --format-version=1 --no-deps | jq -c '.workspace_members[]'))
-          for member in "${workspace_members[@]:1}"; do
-            ver=v$(echo $member | tr -d '"' | sed "s/.*#//")
-            if [[ $ver != ${{ github.ref_name }} ]]; then exit 1; fi
-          done
 
   build_linux:
     needs: [checks]

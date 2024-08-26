@@ -1,5 +1,5 @@
+use crate::entities::metrics;
 use anyhow::{self, Context};
-use entities::metrics;
 use sea_orm::*;
 
 pub async fn fetch_within(

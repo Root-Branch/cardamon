@@ -1,5 +1,7 @@
-use crate::dao::{self, pagination::Page};
-use entities::{iteration, metrics};
+use crate::{
+    dao::{self, pagination::Page},
+    entities::{iteration, metrics},
+};
 use itertools::{Itertools, MinMaxResult};
 use sea_orm::DatabaseConnection;
 use std::collections::{hash_map::Entry, HashMap};

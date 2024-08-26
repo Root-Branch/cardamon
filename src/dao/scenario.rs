@@ -1,6 +1,6 @@
 use super::pagination::Page;
+use crate::entities::iteration::{self, Entity as Iteration};
 use anyhow::{self, Context};
-use entities::iteration::{self, Entity as Iteration};
 use sea_orm::*;
 
 #[derive(DerivePartialModel, FromQueryResult)]

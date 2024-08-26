@@ -1,6 +1,6 @@
 use super::pagination::Page;
+use crate::entities::iteration::{self, Entity as Iteration};
 use anyhow::{self, Context};
-use entities::iteration::{self, Entity as Iteration};
 use sea_orm::*;
 use sea_query::{Expr, Query};
 
@@ -122,4 +122,3 @@ pub async fn fetch_by_scenario_and_run(
         .await
         .context("Error fetching iterations by scenario and run")
 }
-
