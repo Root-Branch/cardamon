@@ -23,7 +23,9 @@ jobs:
         run: |
           card_ver=v$(cargo metadata --format-version=1 --no-deps | jq '.packages[0].version' | tr -d '"')
           if [[ $card_ver == "${{ github.ref_name }}" ]]; then exit 0; else exit 1; fi
+
   build_linux:
+    needs: [checks]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout cardamon
