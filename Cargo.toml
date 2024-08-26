@@ -7,7 +7,7 @@ authors = [
   "William Kimbell <will@kimbell.uk>",
 ]
 description = "Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software."
-license = "Polyform Shield v1.0"
+license-file = "LICENSE"
 repository = "https://github.com/Root-Branch/cardamon"
 documentation = "https://docs.rs/cardamon"
 homepage = "https://github.com/Root-Branch/cardamon"
