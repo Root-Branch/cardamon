@@ -9,6 +9,20 @@ on:
       - "**[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check version numbers match
+        run: |
+          card_ver=v$(cargo metadata --format-version=1 --no-deps | jq '.packages[0].version' | tr -d '"')
+          if [[ $card_ver == "${{ github.ref_name }}" ]]; then exit 0; else exit 1; fi
   build_linux:
     runs-on: ubuntu-latest
     steps:
