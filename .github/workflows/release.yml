@@ -22,7 +22,13 @@ jobs:
       - name: Check version numbers match
         run: |
           card_ver=v$(cargo metadata --format-version=1 --no-deps | jq '.packages[0].version' | tr -d '"')
-          if [[ $card_ver == "${{ github.ref_name }}" ]]; then exit 0; else exit 1; fi
+          if [[ $card_ver != "${{ github.ref_name }}" ]]; then exit 1; fi
+
+          workspace_members=($(cargo metadata --format-version=1 --no-deps | jq -c '.workspace_members[]'))
+          for member in "${workspace_members[@]:1}"; do
+            ver=v$(echo $member | tr -d '"' | sed "s/.*#//")
+            if [[ $ver != ${{ github.ref_name }} ]]; then exit 1; fi
+          done
 
   build_linux:
     needs: [checks]
@@ -78,6 +84,6 @@ jobs:
           path: artifact
           merge-multiple: true
       - name: Create release
-        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifact/cardamon-*
+        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifact/*.*
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

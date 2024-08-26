@@ -25,8 +25,8 @@ readme = "README.md"
 members = [".", "entities", "migration"]
 
 [dependencies]
-entities = { path = "entities" }
-migration = { path = "migration" }
+entities = { version = "^0.0.2", path = "entities" }
+migration = { version = "^0.0.2", path = "migration" }
 
 anyhow = { version = "1.0.75", features = ["std"] }
 axum = { version = "0.7.1", features = ["json", "macros"] }
