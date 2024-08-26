@@ -65,8 +65,22 @@ jobs:
         with:
           path: cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tar.gz
 
-  release:
+  publish_crate:
     needs: [build_linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Publish to crates.io
+        run: cargo publish --no-verify --token ${{ secrets.CRATES_IO_TOKEN }}
+
+  release:
+    needs: [publish_crate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
