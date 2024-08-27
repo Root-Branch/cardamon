@@ -74,6 +74,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
+          name: cardamon-${{ matrix.os }}
           path: cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
 
   publish_crate:
@@ -109,9 +110,10 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifact
+          path: artifacts
+          pattern: cardamon-*
           merge-multiple: true
       - name: Create release
-        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifact/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz artifact/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
+        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
