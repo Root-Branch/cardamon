@@ -27,7 +27,9 @@ exclude = [
   "cardamon.db",
   ".env-example",
   ".github",
+  "src/public/.gitkeep",
 ]
+include = ["src/public"]
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["std"] }
