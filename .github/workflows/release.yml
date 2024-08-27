@@ -24,9 +24,21 @@ jobs:
           card_ver=v$(cargo metadata --format-version=1 --no-deps | jq '.packages[0].version' | tr -d '"')
           if [[ $card_ver != "${{ github.ref_name }}" ]]; then exit 1; fi
 
-  build_linux:
+  build:
     needs: [checks]
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: tgz
+            compress_cmd: tar -czf cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz -C artifact .
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: zip
+            compress_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout cardamon
         uses: actions/checkout@v4
@@ -58,29 +70,30 @@ jobs:
           cp README.md artifact/
 
       - name: Compress build artifact
-        run: tar -czf cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz -C artifact .
+        run: ${{ matrix.compress_cmd }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          path: cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz
+          path: cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.ext }}
 
-  publish_crate:
-    needs: [build_linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Publish to crates.io
-        run: cargo publish --no-verify --token ${{ secrets.CRATES_IO_TOKEN }}
+  # publish_crate:
+  #   needs: [build]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         submodules: recursive
+  #
+  #     - name: Setup Rust
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #
+  #     - name: Publish to crates.io
+  #       run: cargo publish --no-verify --token ${{ secrets.CRATES_IO_TOKEN }}
 
   release:
-    needs: [publish_crate]
+    needs: [build]
+    # needs: [publish_crate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +105,6 @@ jobs:
           path: artifact
           merge-multiple: true
       - name: Create release
-        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifact/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz
+        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifact/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz artifact/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
