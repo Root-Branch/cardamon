@@ -18,6 +18,16 @@ categories = [
   "development-tools::profiling",
 ]
 readme = "README.md"
+exclude = [
+  "ui",
+  "tests",
+  "examples",
+  "fixtures",
+  "cardamon.toml",
+  "cardamon.db",
+  ".env-example",
+  ".github",
+]
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["std"] }
