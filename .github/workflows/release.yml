@@ -32,12 +32,14 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            ext: tgz
-            compress_cmd: tar -czf cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz -C artifact .
+            exe_ext:
+            archive_ext: tgz
+            archive_cmd: tar -czf cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz -C artifact .
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            ext: zip
-            compress_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
+            exe_ext: .exe
+            archive_ext: zip
+            archive_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout cardamon
@@ -62,17 +64,17 @@ jobs:
       - name: Build release artifact
         run: |
           mkdir artifact
-          cp target/release/cardamon artifact/cardamon
+          cp target/release/cardamon${{ matrix.exe_ext }} artifact/cardamon${{ matrix.exe_ext }}
           cp LICENSE artifact/
           cp README.md artifact/
 
       - name: Compress build artifact
-        run: ${{ matrix.compress_cmd }}
+        run: ${{ matrix.archive_cmd }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          path: cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.ext }}
+          path: cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
 
   publish_crate:
     needs: [build]
