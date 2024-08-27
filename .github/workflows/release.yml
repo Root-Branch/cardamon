@@ -76,11 +76,20 @@ jobs:
       - name: Compress build artifact
         run: ${{ matrix.archive_cmd }}
 
+      - name: Calculate SHA-256 checksum
+        run: shasum -a 256 cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }} > cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}.sha256
+
+      - name: Copy artifacts to upload directory
+        run: |
+          mkdir uploads
+          mv cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }} uploads/
+          mv cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}.sha256 uploads/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cardamon-${{ matrix.os }}
-          path: cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
+          path: uploads/cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
 
   publish_crate:
     needs: [build]
