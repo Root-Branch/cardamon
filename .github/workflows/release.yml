@@ -130,12 +130,12 @@ jobs:
           merge-multiple: true
       - name: Create release
         run: |
-          gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" |
-          artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz |
-          artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz.sha256 |
-          artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip |
-          artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip.sha256 |
-          artifacts/cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz |
+          gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" \
+          artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz \
+          artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz.sha256 \
+          artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip \
+          artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip.sha256 \
+          artifacts/cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz \
           artifacts/cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz.sha256
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
