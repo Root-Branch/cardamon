@@ -54,7 +54,7 @@ jobs:
         run: npm --prefix ui install
 
       - name: Build UI
-        run: npm --prefix ui run build-only
+        run: npm --prefix ui run build:release
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -77,19 +77,31 @@ jobs:
         with:
           path: cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.ext }}
 
-  # publish_crate:
-  #   needs: [build]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         submodules: recursive
-  #
-  #     - name: Setup Rust
-  #       uses: actions-rust-lang/setup-rust-toolchain@v1
-  #
-  #     - name: Publish to crates.io
-  #       run: cargo publish --no-verify --token ${{ secrets.CRATES_IO_TOKEN }}
+  publish_crate:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cardamon
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Install NodeJS dependencies
+        run: npm --prefix ui install
+
+      - name: Build UI
+        run: npm --prefix ui run build:release
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Cardamon
+        run: cargo publish --no-verify --allow-dirty --token ${{ secrets.CRATES_IO_TOKEN }}
 
   release:
     needs: [build]
