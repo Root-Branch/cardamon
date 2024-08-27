@@ -28,7 +28,7 @@ jobs:
     needs: [checks]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -40,6 +40,11 @@ jobs:
             exe_ext: .exe
             archive_ext: zip
             archive_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            exe_ext:
+            archive_ext: tgz
+            archive_cmd: tar -czf cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz -C artifact .
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout cardamon
@@ -114,6 +119,6 @@ jobs:
           pattern: cardamon-*
           merge-multiple: true
       - name: Create release
-        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
+        run: gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip artifacts/cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
