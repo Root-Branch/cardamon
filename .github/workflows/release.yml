@@ -91,32 +91,31 @@ jobs:
           name: cardamon-${{ matrix.os }}
           path: uploads/
 
-  # publish_crate:
-  #   needs: [build]
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Checkout cardamon
-  #       uses: actions/checkout@v4
-  #       with:
-  #         submodules: recursive
-  #
-  #     - name: Setup NodeJS
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "20.x"
-  #
-  #     - name: Build UI
-  #       run: cd ui && npm install && npm run build:release
-  #
-  #     - name: Setup Rust
-  #       uses: actions-rust-lang/setup-rust-toolchain@v1
-  #
-  #     - name: Build Cardamon
-  #       run: cargo publish --no-verify --allow-dirty --token ${{ secrets.CRATES_IO_TOKEN }}
+  publish_crate:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cardamon
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Build UI
+        run: cd ui && npm install && npm run build:release
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Cardamon
+        run: cargo publish --no-verify --allow-dirty --token ${{ secrets.CRATES_IO_TOKEN }}
 
   release:
-    # needs: [publish_crate]
-    needs: [build]
+    needs: [publish_crate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
