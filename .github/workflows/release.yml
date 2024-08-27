@@ -50,17 +50,14 @@ jobs:
         with:
           node-version: "20.x"
 
-      - name: Install NodeJS dependencies
-        run: npm --prefix ui install
-
       - name: Build UI
-        run: npm --prefix ui run build:release
+        run: cd ui && npm install && npm run build:release
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Build Cardamon
-        run: cargo build --release
+        run: cd ../ && cargo build --release
 
       - name: Build release artifact
         run: |
@@ -91,11 +88,8 @@ jobs:
         with:
           node-version: "20.x"
 
-      - name: Install NodeJS dependencies
-        run: npm --prefix ui install
-
       - name: Build UI
-        run: npm --prefix ui run build:release
+        run: cd ui && npm install && npm run build:release
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
