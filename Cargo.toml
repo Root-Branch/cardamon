@@ -11,14 +11,12 @@ license-file = "LICENSE"
 repository = "https://github.com/Root-Branch/cardamon"
 documentation = "https://docs.rs/cardamon"
 homepage = "https://github.com/Root-Branch/cardamon"
-keywords = [
-  "carbon-emissions",
-  "co2-monitoring",
-  "process-monitoring",
-  "environmental",
-  "sustainability",
+keywords = ["green-software", "environmental", "sustainability"]
+categories = [
+  "command-line-utilities",
+  "development-tools",
+  "development-tools::profiling",
 ]
-categories = ["Command line utilities", "Science"]
 readme = "README.md"
 
 [dependencies]
