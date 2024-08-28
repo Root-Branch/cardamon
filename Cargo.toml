@@ -1,6 +1,6 @@
 [package]
 name = "cardamon"
-version = "0.0.6"
+version = "0.0.7"
 edition = "2021"
 authors = [
   "Oliver Winks <oliver@paperplane.software>",
@@ -19,6 +19,9 @@ categories = [
 ]
 readme = "README.md"
 include = ["src/**/*.rs", "src/public", "src/templates"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["std"] }
@@ -68,11 +71,3 @@ tracing-subscriber = { version = "0.3.18", features = [
   "registry",
   "env-filter",
 ] }
-
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }.{ archive-format }"
-bin-dir = "{ name }-{ target }-v{ version }/{ bin }{ binary-ext }"
-pkg-fmt = "tgz"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"

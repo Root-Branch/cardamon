@@ -34,17 +34,17 @@ jobs:
             target: x86_64-unknown-linux-gnu
             exe_ext:
             archive_ext: tgz
-            archive_cmd: tar -czf cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz -C artifact .
+            archive_cmd: tar -czf cardamon-x86_64-unknown-linux-gnu.tgz -C artifact .
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             exe_ext: .exe
             archive_ext: zip
-            archive_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip
+            archive_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc.zip
           - os: macos-latest
             target: aarch64-apple-darwin
             exe_ext:
             archive_ext: tgz
-            archive_cmd: tar -czf cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz -C artifact .
+            archive_cmd: tar -czf cardamon-aarch64-apple-darwin.tgz -C artifact .
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout cardamon
@@ -77,13 +77,13 @@ jobs:
         run: ${{ matrix.archive_cmd }}
 
       - name: Calculate SHA-256 checksum
-        run: shasum -a 256 cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }} > cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}.sha256
+        run: shasum -a 256 cardamon-${{ matrix.target }}.${{ matrix.archive_ext }} > cardamon-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
 
       - name: Copy artifacts to upload directory
         run: |
           mkdir uploads
-          mv cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }} uploads/
-          mv cardamon-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive_ext }}.sha256 uploads/
+          mv cardamon-${{ matrix.target }}.${{ matrix.archive_ext }} uploads/
+          mv cardamon-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256 uploads/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -130,11 +130,11 @@ jobs:
       - name: Create release
         run: |
           gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" \
-          artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz \
-          artifacts/cardamon-x86_64-unknown-linux-gnu-${{ github.ref_name }}.tgz.sha256 \
-          artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip \
-          artifacts/cardamon-x86_64-pc-windows-msvc-${{ github.ref_name }}.zip.sha256 \
-          artifacts/cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz \
-          artifacts/cardamon-aarch64-apple-darwin-${{ github.ref_name }}.tgz.sha256
+          artifacts/cardamon-x86_64-unknown-linux-gnu.tgz \
+          artifacts/cardamon-x86_64-unknown-linux-gnu.tgz.sha256 \
+          artifacts/cardamon-x86_64-pc-windows-msvc.zip \
+          artifacts/cardamon-x86_64-pc-windows-msvc.zip.sha256 \
+          artifacts/cardamon-aarch64-apple-darwin.tgz \
+          artifacts/cardamon-aarch64-apple-darwin.tgz.sha256
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
