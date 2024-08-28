@@ -26,7 +26,23 @@ DATABASE_NAME (only required for postgresql and mysql)
 
 ## Installation
 
-Coming soon!
+The easiest way to install Cardamon is using our install script.
+
+**Linux & Mac**
+`curl -fsSL https://cardamon.rootandbranch.io/install.sh | sh`
+
+**Windows**
+
+```
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+irm -Uri https://cardamon.rootandbranch.io/install.ps1 | iex
+```
+
+### Cargo
+
+Alternatively you can build Cardamon from source if you have `cargo` installed.
+
+`cargo install cardamon`
 
 ## CLI Reference
 
