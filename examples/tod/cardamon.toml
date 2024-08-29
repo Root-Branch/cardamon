@@ -1,0 +1,22 @@
+[computer] 
+cpu_name = "AMD Ryzen 7 7840U w/ Radeon 780M Graphics (16) @ 5.132GHz"
+cpu_avg_power= 28.0
+
+[[processes]]
+name = "backend"
+up = "docker compose up --build"
+down = "docker compose down"
+redirect.to = "parent"
+process.type = "docker"
+process.containers = ["redis","todo-app"]
+
+[[scenarios]]
+name = "rust_test"                    # Required
+desc = "Test each endpoint 100 times" # Optional 
+command = "bash -c '(cd testing && cargo run)'"                  # Required - commands for running scenarios
+iterations = 1                        # Optional - defaults to 1
+processes = ["backend"]                  # Required - prepend process name with `_` to ignore
+
+[[observations]]
+name = "todo"            # Required
+scenarios = ["rust_test"] # Required

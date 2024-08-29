@@ -7,9 +7,9 @@ use std::{
 };
 
 #[cfg(not(windows))]
-static EXAMPLE_CONFIG: &str = include_str!("data/cardamon.unix.toml");
+static EXAMPLE_CONFIG: &str = include_str!("templates/cardamon.unix.toml");
 #[cfg(windows)]
-static EXAMPLE_CONFIG: &str = include_str!("data/cardamon.win.toml");
+static EXAMPLE_CONFIG: &str = include_str!("templates/cardamon.win.toml");
 
 #[cfg(not(windows))]
 static LINE_ENDING: &str = "\n";
@@ -184,7 +184,7 @@ pub struct Scenario {
     pub name: String,
     pub desc: String,
     pub command: String,
-    pub iterations: u32,
+    pub iterations: i32,
     pub processes: Vec<String>,
 }
 impl Scenario {
@@ -223,10 +223,10 @@ pub enum ProcessToObserve {
 #[derive(Debug)]
 pub struct ScenarioToExecute<'a> {
     pub scenario: &'a Scenario,
-    pub iteration: u32,
+    pub iteration: i32,
 }
 impl<'a> ScenarioToExecute<'a> {
-    fn new(scenario: &'a Scenario, iteration: u32) -> Self {
+    fn new(scenario: &'a Scenario, iteration: i32) -> Self {
         Self {
             scenario,
             iteration,

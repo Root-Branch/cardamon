@@ -1,0 +1,140 @@
+name: Release
+permissions:
+  "contents": "write"
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "**[0-9]+.[0-9]+.[0-9]+*"
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check version numbers match
+        run: |
+          card_ver=v$(cargo metadata --format-version=1 --no-deps | jq '.packages[0].version' | tr -d '"')
+          if [[ $card_ver != "${{ github.ref_name }}" ]]; then exit 1; fi
+
+  build:
+    needs: [checks]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            exe_ext:
+            archive_ext: tgz
+            archive_cmd: tar -czf cardamon-x86_64-unknown-linux-gnu.tgz -C artifact .
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe_ext: .exe
+            archive_ext: zip
+            archive_cmd: Compress-Archive -Path artifact/* -Destination cardamon-x86_64-pc-windows-msvc.zip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            exe_ext:
+            archive_ext: tgz
+            archive_cmd: tar -czf cardamon-aarch64-apple-darwin.tgz -C artifact .
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout cardamon
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Build UI
+        run: cd ui && npm cache clean --force && npm install && npm run build:release
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Cardamon
+        run: cargo build --release
+
+      - name: Build release artifact
+        run: |
+          mkdir artifact
+          cp target/release/cardamon${{ matrix.exe_ext }} artifact/cardamon${{ matrix.exe_ext }}
+          cp LICENSE artifact/
+          cp README.md artifact/
+
+      - name: Compress build artifact
+        run: ${{ matrix.archive_cmd }}
+
+      - name: Calculate SHA-256 checksum
+        run: shasum -a 256 cardamon-${{ matrix.target }}.${{ matrix.archive_ext }} > cardamon-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+
+      - name: Copy artifacts to upload directory
+        run: |
+          mkdir uploads
+          mv cardamon-${{ matrix.target }}.${{ matrix.archive_ext }} uploads/
+          mv cardamon-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256 uploads/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardamon-${{ matrix.os }}
+          path: uploads/
+
+  publish_crate:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cardamon
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+
+      - name: Build UI
+        run: cd ui && npm install && npm run build:release
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Build Cardamon
+        run: cargo publish --no-verify --allow-dirty --token ${{ secrets.CRATES_IO_TOKEN }}
+
+  release:
+    needs: [publish_crate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: cardamon-*
+          merge-multiple: true
+      - name: Create release
+        run: |
+          gh release create ${{  github.ref_name }} --draft --title "Release ${{ github.ref_name }}" --notes "" \
+          artifacts/cardamon-x86_64-unknown-linux-gnu.tgz \
+          artifacts/cardamon-x86_64-unknown-linux-gnu.tgz.sha256 \
+          artifacts/cardamon-x86_64-pc-windows-msvc.zip \
+          artifacts/cardamon-x86_64-pc-windows-msvc.zip.sha256 \
+          artifacts/cardamon-aarch64-apple-darwin.tgz \
+          artifacts/cardamon-aarch64-apple-darwin.tgz.sha256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

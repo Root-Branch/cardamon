@@ -1,75 +1,73 @@
 [package]
 name = "cardamon"
-version = "0.1.0"
+version = "0.0.7"
 edition = "2021"
 authors = [
   "Oliver Winks <oliver@paperplane.software>",
   "William Kimbell <will@kimbell.uk>",
 ]
 description = "Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software."
-# Filled out by @ohuu please 
-#license = "MIT OR Apache-2.0"
+license-file = "LICENSE"
 repository = "https://github.com/Root-Branch/cardamon"
 documentation = "https://docs.rs/cardamon"
 homepage = "https://github.com/Root-Branch/cardamon"
-keywords = [
-  "carbon-emissions",
-  "co2-monitoring",
-  "process-monitoring",
-  "environmental",
-  "sustainability",
+keywords = ["green-software", "environmental", "sustainability"]
+categories = [
+  "command-line-utilities",
+  "development-tools",
+  "development-tools::profiling",
 ]
-categories = ["Command line utilities", "Science"]
 readme = "README.md"
+include = ["src/**/*.rs", "src/public", "src/templates"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[[bin]]
-name = "card"
-path = "src/main.rs"
-
-[[bin]]
-name = "card-server"
-path = "src/server_main.rs"
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["std"] }
-async-trait = "0.1.80"
+async-trait = "0.1.81"
 axum = { version = "0.7.1", features = ["json", "macros"] }
+bollard = "0.17.1"
+bytes = "1.6.0"
 chrono = { version = "0.4.31", features = ["serde"] }
 clap = { version = "4.4.10", features = ["derive"] }
-dotenv = "0.15.0"
+colored = "2.1.0"
+dotenvy = "0.15.7"
+futures-util = "0.3.30"
+http = "1.1.0"
+itertools = "0.13.0"
+mime_guess = { version = "2.0.5" }
 nanoid = "0.4.0"
+num_cpus = "1.16.0"
+reqwest = { version = "0.12.7", features = ["json"] }
+rust-embed = "8.5.0"
+sea-orm = { version = "1.0.0", features = [
+  "sqlx-sqlite",
+  "sqlx-postgres",
+  "sqlx-mysql",
+  "runtime-tokio-rustls",
+  "macros",
+  "tests-cfg",
+] }
+sea-orm-macros = { version = "1.0.0" }
+sea-orm-migration = { version = "1.0.0", features = [
+  "sqlx-sqlite",
+  "sqlx-postgres",
+  "sqlx-mysql",
+  "runtime-tokio-rustls",
+] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.117"
+shlex = "1.3.0"
+subprocess = "0.2.9"
+sysinfo = "0.31.2"
+tar = "0.4.41"
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-util = "0.7.11"
-itertools = "0.12.0"
+toml = "0.8.12"
+tower-http = { version = "0.5.2", features = ["cors"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = [
   "registry",
   "env-filter",
 ] }
-tracing-bunyan-formatter = "0.3.9"
-toml = "0.8.12"
-sqlx = { version = "0.7.4", features = [
-  "runtime-tokio",
-  "tls-rustls",
-  "sqlite",
-  "migrate",
-] }
-reqwest = { version = "0.12.4", features = ["json"] }
-sysinfo = "0.30.12"
-bollard = "0.16.1"
-futures-util = "0.3.30"
-lazy_static = "1.4.0"
-subprocess = "0.2.9"
-tracing-log = "0.2.0"
-shlex = "1.3.0"
-bytes = "1.6.0"
-scraper = "0.19.0"
-url = "2.5.2"
-regex = "1.10.5"
-tar = "0.4.41"
-csv = "1.3.0"
-strsim = "0.11.1"
-colored = "2.1.0"

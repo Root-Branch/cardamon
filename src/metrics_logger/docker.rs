@@ -5,7 +5,8 @@ use chrono::Utc;
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info, warn};
+use sysinfo::System;
+use tracing::{debug, error, warn};
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is
 /// intended to be called from `metrics_logger::log_scenario` or `metrics_logger::log_live`
@@ -19,7 +20,7 @@ use tracing::{debug, error, info, warn};
 ///
 /// * `container_names` - The names of the containers to observe
 /// * `metrics_log` - A log of all observed metrics. Another thread should periodically save and
-/// flush this shared log.
+///                   flush this shared log.
 ///
 /// # Returns
 ///
@@ -73,6 +74,9 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             continue;
         }
+        let mut sys = System::new_all();
+        sys.refresh_cpu_all();
+        let core_count = num_cpus::get();
 
         for container in containers {
             if let Some(container_id) = container.id.as_ref() {
@@ -96,8 +100,12 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
 
                 match docker_stats {
                     Some(Ok(stats)) => {
-                        let cpu_metrics =
-                            calculate_cpu_metrics(container_id, container_name.to_string(), &stats);
+                        let cpu_metrics = calculate_cpu_metrics(
+                            container_id,
+                            container_name.to_string(),
+                            &stats,
+                            &core_count,
+                        );
                         debug!(
                             "Pushing metrics to metrics log form container name/s {:?}",
                             container.names
@@ -124,7 +132,12 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
     }
 }
 
-fn calculate_cpu_metrics(container_id: &str, container_name: String, stats: &Stats) -> CpuMetrics {
+fn calculate_cpu_metrics(
+    container_id: &str,
+    container_name: String,
+    stats: &Stats,
+    core_count: &usize,
+) -> CpuMetrics {
     let cpu_delta =
         stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
     let system_delta = stats.cpu_stats.system_cpu_usage.unwrap_or(0)
@@ -136,16 +149,19 @@ fn calculate_cpu_metrics(container_id: &str, container_name: String, stats: &Sta
     } else {
         0.0
     };
-
-    info!(
+    let cpu_usage = if cpu_usage != 0.0 {
+        cpu_usage / *core_count as f64
+    } else {
+        0.0
+    };
+    debug!(
         "Calculated CPU metrics for container {} ({}), cpu percentage: {}",
         container_id, container_name, cpu_usage
     );
-
     CpuMetrics {
         process_id: container_id.to_string(),
         process_name: container_name,
-        cpu_usage,
+        cpu_usage: cpu_usage / *core_count as f64,
         core_count: stats.cpu_stats.online_cpus.unwrap_or(1) as i32,
         timestamp: Utc::now().timestamp_millis(),
     }
@@ -343,7 +359,7 @@ CMD ["sleep", "infinity"]
         // ( Plus it sets the "grace" period docker has to 0, immediately stopping it )
         docker
             .remove_container(
-                &container_id,
+                container_id,
                 Some(RemoveContainerOptions {
                     force: true,
                     v: true,
@@ -355,7 +371,7 @@ CMD ["sleep", "infinity"]
 
         docker
             .remove_image(
-                &image_id,
+                image_id,
                 Some(RemoveImageOptions {
                     force: true,
                     noprune: false,

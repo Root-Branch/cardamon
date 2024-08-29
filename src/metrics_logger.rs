@@ -1,9 +1,3 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 pub mod bare_metal;
 pub mod docker;
 
@@ -89,7 +83,7 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
     if !pids.is_empty() {
         let token = token.clone();
         let shared_metrics_log = shared_metrics_log.clone();
-
+        tracing::debug!("Spawning bare metal thread");
         join_set.spawn(async move {
             tracing::info!("Logging PIDs: {:?}", pids);
             tokio::select! {
@@ -109,12 +103,12 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
         join_set.spawn(async move {
             tracing::info!("Logging containers: {:?}", container_names);
             tokio::select! {
-                _ = token.cancelled() => {}
-                _ = docker::keep_logging(
-                        container_names,
-                        shared_metrics_log,
-                    ) => {}
-            }
+                            _ = token.cancelled() => {}
+                            _ = docker::keep_logging(
+                                    container_names,
+            shared_metrics_log,
+                                 ) => {}
+                         }
         });
     }
 
@@ -137,7 +131,7 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
 ///
 /// * `processes` - The processes to observe in the live environment
 /// * `metrics_log` - A log of all observed metrics. Another thread should periodically save and
-/// flush this shared log.
+///                   flush this shared log.
 ///
 /// # Returns
 ///

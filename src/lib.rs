@@ -1,20 +1,30 @@
 pub mod config;
-pub mod data_access;
+pub mod dao;
 pub mod dataset;
+pub mod entities;
 pub mod metrics;
 pub mod metrics_logger;
+pub mod migrations;
+pub mod server;
 
 use crate::config::Config;
 use anyhow::{anyhow, Context};
+use chrono::Utc;
 use colored::Colorize;
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
-use data_access::{scenario_iteration::ScenarioIteration, DataAccessService};
-use dataset::ObservationDataset;
+use dataset::{Dataset, DatasetBuilder};
+use entities::{iteration, run};
+use sea_orm::*;
 use serde_json::Value;
-use std::{collections::HashMap, fs::File, io::Write, path::Path, time, vec};
+use std::{
+    collections::HashMap,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::Path,
+};
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
-use tracing::info;
+use tracing::{debug, info};
 
 fn ask_for_cpu() -> String {
     loop {
@@ -155,6 +165,22 @@ pub async fn init_config() {
     }
 }
 
+/// Deletes previous runs .stdout and .stderr
+/// Stdout and stderr capturing are append due to a scenario / observeration removing previous ones
+/// stdout and err
+pub fn cleanup_stdout_stderr() -> anyhow::Result<()> {
+    debug!("Cleaning up stdout and stderr");
+    let stdout = Path::new("./.stdout");
+    let stderr = Path::new("./.stderr");
+    if stdout.exists() {
+        fs::remove_file(stdout)?;
+    }
+    if stderr.exists() {
+        fs::remove_file(stderr)?;
+    }
+    Ok(())
+}
+
 /// Runs the given command as a detached processes. This function does not block because the
 /// process is managed by the OS and running separately from this thread.
 ///
@@ -184,9 +210,14 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
                 Redirect::Null => exec.stdout(NullFile).stderr(NullFile),
                 Redirect::Parent => exec,
                 Redirect::File => {
-                    let out_file = File::create(Path::new("./.stdout"))?;
-                    let err_file = File::create(Path::new("./.stderr"))?;
-
+                    let out_file = OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open("./.stdout")?;
+                    let err_file = OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open("./.stderr")?;
                     exec.stdout(Redirection::File(out_file))
                         .stderr(Redirection::File(err_file))
                 }
@@ -218,6 +249,7 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
 fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToObserve>> {
     match &proc.process {
         config::ProcessType::Docker { containers } => {
+            debug!("Running command {} in detached mode ( Docker ) ", proc.up);
             // run the command
             run_command_detached(&proc.up, &proc.redirect)?;
 
@@ -229,6 +261,10 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
         }
 
         config::ProcessType::BareMetal => {
+            debug!(
+                "Running command {} in detached mode ( Bare metal ) ",
+                proc.up
+            );
             // run the command
             let pid = run_command_detached(&proc.up, &proc.redirect)?;
 
@@ -239,18 +275,17 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
 }
 
 async fn run_scenario<'a>(
-    run_id: &str,
+    run_id: i32,
     scenario_to_execute: &ScenarioToExecute<'a>,
-) -> anyhow::Result<ScenarioIteration> {
-    let start = time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)?
-        .as_millis();
+) -> anyhow::Result<iteration::ActiveModel> {
+    let start = Utc::now().timestamp_millis();
 
     // Split the scenario_command into a vector
     let command_parts = match shlex::split(&scenario_to_execute.scenario.command) {
         Some(command) => command,
         None => vec!["error".to_string()],
     };
+
     // Get the command and arguments
     let command = command_parts
         .first()
@@ -271,17 +306,16 @@ async fn run_scenario<'a>(
         .context(format!("Tokio command failed to run {command}"))?;
     info!("Ran command {}", scenario_to_execute.scenario.command);
     if output.status.success() {
-        let stop = time::SystemTime::now()
-            .duration_since(time::UNIX_EPOCH)?
-            .as_millis();
+        let stop = Utc::now().timestamp_millis();
 
-        let scenario_iteration = ScenarioIteration::new(
-            run_id,
-            &scenario_to_execute.scenario.name,
-            scenario_to_execute.iteration as i64,
-            start as i64,
-            stop as i64,
-        );
+        let scenario_iteration = iteration::ActiveModel {
+            id: ActiveValue::NotSet,
+            run_id: ActiveValue::Set(run_id),
+            scenario_name: ActiveValue::Set(scenario_to_execute.scenario.name.clone()),
+            count: ActiveValue::Set(scenario_to_execute.iteration),
+            start_time: ActiveValue::Set(start),
+            stop_time: ActiveValue::Set(stop),
+        };
         Ok(scenario_iteration)
     } else {
         let error_message = String::from_utf8_lossy(&output.stderr).to_string();
@@ -350,10 +384,9 @@ fn shutdown_application(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
-    data_access_service: &dyn DataAccessService,
-) -> anyhow::Result<ObservationDataset> {
-    // create a unique cardamon run id
-    let run_id = nanoid::nanoid!(5);
+    db: &DatabaseConnection,
+) -> anyhow::Result<Dataset> {
+    let mut run_id: i32 = 0;
 
     let mut processes_to_observe = exec_plan.external_processes_to_observe.to_vec(); // external procs to observe are cloned here.
 
@@ -365,13 +398,30 @@ pub async fn run<'a>(
         }
     }
 
+    // record the cardamon run
+
     // ---- for each scenario ----
     for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
         // start the metrics loggers
         let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
+        let start_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
+                                                        // timezones
+
+        // create a new run
+        let mut active_run = run::ActiveModel {
+            id: sea_orm::ActiveValue::NotSet,
+            start_time: sea_orm::ActiveValue::Set(start_time),
+            stop_time: sea_orm::ActiveValue::set(None),
+        }
+        .save(db)
+        .await?;
+
+        // get the new run id
+        run_id = active_run.clone().try_into_model()?.id;
+
         // run the scenario
-        let scenario_iteration = run_scenario(&run_id, scenario_to_execute).await?;
+        let scenario_iteration = run_scenario(run_id, scenario_to_execute).await?;
 
         // stop the metrics loggers
         let metrics_log = stop_handle.stop().await?;
@@ -386,31 +436,43 @@ pub async fn run<'a>(
         }
 
         // write scenario and metrics to db
-        data_access_service
-            .scenario_iteration_dao()
-            .persist(&scenario_iteration)
-            .await?;
+        // write run table first due to foreign key constraints
+        //let stop_time = time::SystemTime::now().duration_since(time::UNIX_EPOCH).
+        let stop_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
+                                                       // timezones
+
+        // update run with the stop time
+        active_run.stop_time = ActiveValue::Set(Some(stop_time));
+        active_run.save(db).await?;
+
+        // println!("got here!");
+
+        // save the scenario iteration
+        scenario_iteration.save(db).await?;
 
         for metrics in metrics_log.get_metrics() {
-            data_access_service
-                .cpu_metrics_dao()
-                .persist(&metrics.into_data_access(&run_id))
-                .await?;
+            metrics.into_active_model(run_id).save(db).await?;
         }
     }
-    // ---- end for ----
 
     // stop the application
     shutdown_application(&exec_plan, &processes_to_observe)?;
 
     // create a summary to return to the user
-    let scenario_names = exec_plan.scenario_names();
-    let previous_runs = 3;
-    let observation_dataset = data_access_service
-        .fetch_observation_dataset(scenario_names, previous_runs)
-        .await?;
+    // let scenario_names = exec_plan.scenario_names();
+    // let previous_runs = 3;
+    // let observation_dataset = dao_service
+    //     .fetch_observation_dataset(scenario_names, previous_runs)
+    //     .await?;
+    //
+    // Ok(observation_dataset)
 
-    Ok(observation_dataset)
+    // create a dataset containing the data just collected
+    DatasetBuilder::new(db)
+        .scenarios_in_run(run_id)
+        .all()
+        .last_n_runs(3)
+        .await
 }
 
 #[cfg(test)]
@@ -498,6 +560,8 @@ mod tests {
 
     #[cfg(target_family = "unix")]
     mod unix {
+        use std::ops::Deref;
+
         use super::*;
         use crate::config::Redirect;
 
@@ -519,8 +583,11 @@ mod tests {
                     let mut system = System::new();
                     system.refresh_all();
                     let proc = system.process(Pid::from_u32(*pid));
+                    let proc_name = proc.unwrap().name().to_os_string();
+                    let proc_name = proc_name.to_string_lossy();
+                    let proc_name = proc_name.deref().to_string();
                     assert!(proc.is_some());
-                    assert!(proc.unwrap().name() == name.clone().unwrap());
+                    assert!(proc_name == name.clone().unwrap());
                 }
 
                 e => panic!("expected to find a process id {:?}", e),

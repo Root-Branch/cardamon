@@ -1,237 +1,95 @@
 mod errors;
-use chrono::Utc;
+mod routes;
+mod types;
 
-use axum::{
-    extract::{Path, Query, State},
-    Json,
-};
-use cardamon::data_access::{cpu_metrics::CpuMetrics, scenario_iteration::ScenarioIteration};
-use errors::ServerError;
-use serde::Deserialize;
-use sqlx::SqlitePool;
-use tracing::instrument;
+use anyhow::Context;
+use axum::response::{Html, IntoResponse, Response};
+use axum::{http::header, routing::get, Router};
+use http::{StatusCode, Uri};
+use rust_embed::Embed;
+use sea_orm::DatabaseConnection;
+use tracing::info;
 
-// Must receive data from src/data_access/cpu_metrics.rs in this format:
-/*
+#[derive(Embed, Clone)]
+#[folder = "src/public"]
+struct Asset;
 
-     async fn fetch_within(
-        &self,
-        run_id: &str,
-        begin: i64,
-        end: i64,
-    ) -> anyhow::Result<Vec<CpuMetrics>> {
-        self.client
-            .get(format!(
-                "{}/cpu_metrics/{run_id}?begin={begin}&end={end}",
-                self.base_url
-            ))
-            .send()
-            .await?
-            .json::<Vec<CpuMetrics>>()
-            .await
-            .context("Error fetching cpu metrics with id {id} from remote server")
+pub struct StaticFile<T>(pub T);
+
+impl<T> IntoResponse for StaticFile<T>
+where
+    T: Into<String>,
+{
+    fn into_response(self) -> Response {
+        let path = self.0.into();
+
+        match Asset::get(path.as_str()) {
+            Some(content) => {
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
+                ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
+            }
+            None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+        }
     }
-
-    async fn persist(&self, metrics: &CpuMetrics) -> anyhow::Result<()> {
-        self.client
-            .post(format!("{}/cpu_metrics", self.base_url))
-            .json(metrics)
-            .send()
-            .await?
-            .error_for_status()
-            .map(|_| ())
-            .context("Error persisting cpu metrics to remote server")
-    }
-
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        self.client
-            .delete(format!("{}/cpu_metrics/{id}", self.base_url))
-            .send()
-            .await
-            .map(|_| ())
-            .context("Error deleting cpu metrics with id {id}")
-    }
-*/
-
-//Start cpu_metric routes
-#[derive(Debug, Deserialize)]
-pub struct WithinParams {
-    begin: Option<i64>,
-    end: Option<i64>,
 }
-#[instrument(name = "Fetch CPU metrics within a time range")]
-pub async fn fetch_within(
-    Path(run_id): Path<String>,
-    Query(params): Query<WithinParams>,
-    State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<Vec<CpuMetrics>>, ServerError> {
-    let begin = params.begin.unwrap_or(0);
-    let end = params.end.unwrap_or_else(|| Utc::now().timestamp());
 
-    tracing::debug!(
-        "Received request to fetch CPU metrics for run ID: {}, begin: {}, end: {}",
-        run_id,
-        begin,
-        end
-    );
+// We use static route matchers ("/" and "/index.html") to serve our home
+// page.
+async fn index_handler() -> impl IntoResponse {
+    static_handler("/index.html".parse::<Uri>().unwrap()).await
+}
 
-    let metrics = fetch_metrics_within_range(&pool, &run_id, begin, end)
+// We use a wildcard matcher ("/dist/*file") to match against everything
+// within our defined assets directory. This is the directory on our Asset
+// struct below, where folder = "examples/public/".
+async fn static_handler(uri: Uri) -> impl IntoResponse {
+    let mut path = uri.path().trim_start_matches('/').to_string();
+
+    if path.starts_with("dist/") {
+        path = path.replace("dist/", "");
+    }
+
+    StaticFile(path)
+}
+
+// Finally, we use a fallback route for anything that didn't match.
+async fn not_found() -> Html<&'static str> {
+    Html("<h1>404</h1><p>Not Found</p>")
+}
+
+// Keep seperated for integraion tests
+async fn create_app(db: &DatabaseConnection) -> Router {
+    // Middleware later
+    /*
+    let protected = Router::new()
+    .route("/user", get(routes::user::get_user))
+    .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
+    */
+    Router::new()
+        .route("/api/scenarios", get(routes::get_scenarios))
+        .route("/api/scenarios/:scenario_id", get(routes::get_scenario))
+        .route("/", get(index_handler))
+        .route("/index.html", get(index_handler))
+        .route("/*file", get(static_handler))
+        .fallback_service(get(not_found))
+        .with_state(db.clone())
+
+    // let serve_assets = ServeEmbed::<Assets>::new();
+    // Router::new().nest_service("/", serve_assets)
+    // .layer(
+    //     CorsLayer::new()
+    //         .allow_methods([Method::GET, Method::POST])
+    //         .allow_origin(Any),
+    // )
+}
+
+pub async fn start(port: u32, db: &DatabaseConnection) -> anyhow::Result<()> {
+    let app = create_app(db).await;
+
+    let listener = tokio::net::TcpListener::bind(format!("localhost:{}", port))
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to fetch metrics from database: {:?}", e);
-            ServerError::DatabaseError(e)
-        })?;
+        .unwrap();
 
-    tracing::info!("Successfully fetched {} CPU metrics", metrics.len());
-    Ok(Json(metrics))
-}
-
-async fn fetch_metrics_within_range(
-    pool: &SqlitePool,
-    run_id: &str,
-    begin: i64,
-    end: i64,
-) -> Result<Vec<CpuMetrics>, sqlx::Error> {
-    let metrics = sqlx::query_as!(
-        CpuMetrics,
-        "SELECT * FROM cpu_metrics WHERE run_id = ? AND timestamp BETWEEN ? AND ?",
-        run_id,
-        begin,
-        end
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(metrics)
-}
-#[instrument(name = "Persist metrics into database")]
-pub async fn persist_metrics(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<CpuMetrics>,
-) -> anyhow::Result<String, ServerError> {
-    tracing::debug!("Received payload: {:?}", payload);
-    insert_metrics_into_db(&pool, &payload).await.map_err(|e| {
-        tracing::error!("Failed to persist metrics: {:?}", e);
-        ServerError::DatabaseError(e)
-    })?;
-    tracing::info!("Metrics persisted successfully");
-    Ok("Metrics persisted".to_string())
-}
-
-async fn insert_metrics_into_db(
-    pool: &SqlitePool,
-    metrics: &CpuMetrics,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "INSERT INTO cpu_metrics (run_id, process_id, process_name, cpu_usage, total_usage, core_count, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        metrics.run_id,
-        metrics.process_id,
-        metrics.process_name,
-        metrics.cpu_usage,
-        metrics.total_usage,
-        metrics.core_count,
-        metrics.timestamp
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-// Below routes must confirm to these routes found in src/data_access/scenario_iteration.rs
-/*
-   async fn fetch_last(&self, _name: &str, _n: u32) -> anyhow::Result<Vec<ScenarioIteration>> {
-        todo!()
-    }
-
-    async fn fetch(&self, id: &str) -> anyhow::Result<Option<ScenarioIteration>> {
-        self.client
-            .get(format!("{}/scenario?id={id}", self.base_url))
-            .send()
-            .await?
-            .json::<Option<ScenarioIteration>>()
-            .await
-            .context("Error fetching scenario with id {id} from remote server")
-    }
-
-    async fn persist(&self, scenario: &ScenarioIteration) -> anyhow::Result<()> {
-        self.client
-            .post(format!("{}/scenario", self.base_url))
-            .json(scenario)
-            .send()
-            .await?
-            .error_for_status()
-            .map(|_| ())
-            .context("Error persisting scenario to remote server")
-    }
-
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
-        self.client
-            .delete(format!("{}/scenario?id={id}", self.base_url))
-            .send()
-            .await?
-            .error_for_status()
-            .map(|_| ())
-            .context("Error deleting scenario from remote server")
-    }
-*/
-#[instrument(name = "Fetch last scenario_iteration")]
-pub async fn scenario_iteration_fetch_last(
-    State(pool): State<SqlitePool>,
-) -> anyhow::Result<Json<ScenarioIteration>, ServerError> {
-    tracing::debug!("Received request to fetch last scenario run");
-
-    let scenario_iteration = fetch_last_scenario_iteration(&pool).await.map_err(|e| {
-        tracing::error!("Failed to fetch last scenario run from database: {:?}", e);
-        ServerError::DatabaseError(e)
-    })?;
-
-    tracing::info!("Successfully fetched last scenario run");
-    Ok(Json(scenario_iteration))
-}
-
-#[instrument(name = "Persist scenario iteration")]
-pub async fn scenario_iteration_persist(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<ScenarioIteration>,
-) -> anyhow::Result<String, ServerError> {
-    tracing::debug!("Received payload: {:?}", payload);
-
-    insert_scenario_iteration_into_db(&pool, &payload)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to persist scenario run: {:?}", e);
-            ServerError::DatabaseError(e)
-        })?;
-
-    tracing::info!("Scenario run persisted successfully");
-    Ok("Scenario run persisted".to_string())
-}
-
-#[inline]
-async fn fetch_last_scenario_iteration(
-    pool: &SqlitePool,
-) -> Result<ScenarioIteration, sqlx::Error> {
-    let scenario_iteration = sqlx::query_as!(
-        ScenarioIteration,
-        "SELECT * FROM scenario_iteration ORDER BY start_time DESC LIMIT 1"
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(scenario_iteration)
-}
-
-async fn insert_scenario_iteration_into_db(
-    pool: &SqlitePool,
-    scenario_iteration: &ScenarioIteration,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "INSERT INTO scenario_iteration (run_id, scenario_name, iteration, start_time, stop_time) VALUES (?, ?, ?, ?, ?)",
-        scenario_iteration.run_id,
-        scenario_iteration.scenario_name,
-        scenario_iteration.iteration,
-        scenario_iteration.start_time,
-        scenario_iteration.stop_time
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
+    info!("Starting cardamon server on 0.0.0.0:{}", port);
+    axum::serve(listener, app).await.context("Error serving UI")
 }

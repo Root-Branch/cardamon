@@ -1,10 +1,5 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
-use crate::data_access;
+use crate::entities::metrics;
+use sea_orm::ActiveValue;
 
 #[derive(Debug)]
 pub struct MetricsLog {
@@ -54,15 +49,16 @@ pub struct CpuMetrics {
     pub timestamp: i64,
 }
 impl CpuMetrics {
-    pub fn into_data_access(&self, run_id: &str) -> data_access::cpu_metrics::CpuMetrics {
-        data_access::cpu_metrics::CpuMetrics::new(
-            run_id,
-            &self.process_id,
-            &self.process_name,
-            self.cpu_usage,
-            0_f64,
-            self.core_count as i64,
-            self.timestamp,
-        )
+    pub fn into_active_model(&self, run_id: i32) -> metrics::ActiveModel {
+        metrics::ActiveModel {
+            id: ActiveValue::NotSet,
+            run_id: ActiveValue::Set(run_id),
+            process_id: ActiveValue::Set(self.process_id.clone()),
+            process_name: ActiveValue::Set(self.process_name.clone()),
+            cpu_usage: ActiveValue::Set(self.cpu_usage),
+            cpu_total_usage: ActiveValue::Set(0_f64),
+            cpu_core_count: ActiveValue::Set(self.core_count),
+            time_stamp: ActiveValue::Set(self.timestamp),
+        }
     }
 }

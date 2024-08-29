@@ -14,7 +14,10 @@
 
 ### dotenv ###
 .env
-
+debug.log
+.stderr
+.stdout
+curl/
 
 ### Intellij+all ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
@@ -233,3 +236,5 @@ $RECYCLE.BIN/
 # Custom rules (everything added below won't be overriden by 'Generate .gitignore File' if you use 'Update' option)
 
 scenarios
+src/public/*
+!src/public/.gitkeep

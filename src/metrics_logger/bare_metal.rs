@@ -1,11 +1,9 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-
 use crate::metrics::{CpuMetrics, MetricsLog};
-use std::sync::{Arc, Mutex};
+use chrono::Utc;
+use std::{
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 use sysinfo::{Pid, System};
 use tokio::time::Duration;
 
@@ -21,7 +19,7 @@ use tokio::time::Duration;
 ///
 /// * `pids` - The process ids to observe
 /// * `metrics_log` - A log of all observed metrics. Another thread should periodically save and
-/// flush this shared log.
+///                   flush this shared log.
 ///
 /// # Returns
 ///
@@ -56,15 +54,27 @@ async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics
     system.refresh_all();
 
     if let Some(process) = system.process(Pid::from_u32(pid)) {
-        let cpu_usage = process.cpu_usage() as f64;
-        let core_count = system.physical_core_count().unwrap_or(0) as i32;
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis() as i64;
-
+        let core_count = num_cpus::get() as i32;
+        // Cores can be 0, or system can be wrong, therefore divide here
+        let cpu_usage = if core_count > 0 {
+            (process.cpu_usage() as f64) / (core_count as f64)
+        } else {
+            process.cpu_usage() as f64
+        };
+        let timestamp = Utc::now().timestamp_millis();
+        // Updated, .name just gives "bash" etc, short version
+        // .exe gives proper path
+        let process_name: String = process
+            .exe()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| {
+                let process_name = process.name().to_os_string();
+                let name_str = process_name.to_string_lossy();
+                name_str.deref().to_string()
+            });
         let metrics = CpuMetrics {
             process_id: format!("{pid}"),
-            process_name: process.name().to_string(),
+            process_name,
             cpu_usage,
             core_count,
             timestamp,
