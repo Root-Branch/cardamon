@@ -24,7 +24,9 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    #[command(about = "Runs a single scenario or observation")]
     Run {
+        #[arg(help = "Please provide a scenario or observation name")]
         name: String,
 
         #[arg(value_name = "EXTERNAL PIDs", short, long, value_delimiter = ',')]
@@ -41,10 +43,14 @@ pub enum Commands {
         #[arg(long)]
         external_only: bool,
     },
+
+    #[command(about = "Start the Cardamon UI server")]
     Ui {
         #[arg(short, long)]
         port: Option<u32>,
     },
+
+    #[command(about = "Wizard for creating a cardamon.toml file")]
     Init,
 }
 
