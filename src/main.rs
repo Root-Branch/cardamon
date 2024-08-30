@@ -101,13 +101,13 @@ async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     // Set the debug level, prioritizing command-line args over config
-    let log_level = match env::var("LOG_LEVEL").unwrap_or("INFO".to_string()).as_str() {
+    let log_level = match env::var("LOG_LEVEL").unwrap_or("WARN".to_string()).as_str() {
+        "TRACE" => Level::TRACE,
         "DEBUG" => Level::DEBUG,
         "INFO" => Level::INFO,
         "WARN" => Level::WARN,
         "ERROR" => Level::ERROR,
-        "TRACE" => Level::TRACE,
-        _ => Level::INFO,
+        _ => Level::WARN,
     };
 
     // Set up tracing subscriber
