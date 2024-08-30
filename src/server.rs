@@ -8,7 +8,6 @@ use axum::{http::header, routing::get, Router};
 use http::{StatusCode, Uri};
 use rust_embed::Embed;
 use sea_orm::DatabaseConnection;
-use tracing::info;
 
 #[derive(Embed, Clone)]
 #[folder = "src/public"]
@@ -86,10 +85,13 @@ async fn create_app(db: &DatabaseConnection) -> Router {
 pub async fn start(port: u32, db: &DatabaseConnection) -> anyhow::Result<()> {
     let app = create_app(db).await;
 
-    let listener = tokio::net::TcpListener::bind(format!("localhost:{}", port))
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
         .await
         .unwrap();
 
-    info!("Starting cardamon server on 0.0.0.0:{}", port);
+    println!(
+        "Starting cardamon UI server.\n\nServer running at http://localhost:{}",
+        port
+    );
     axum::serve(listener, app).await.context("Error serving UI")
 }
