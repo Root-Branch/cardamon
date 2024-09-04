@@ -66,7 +66,6 @@ async fn create_app(db: &DatabaseConnection) -> Router {
     */
     Router::new()
         .route("/api/scenarios", get(routes::get_scenarios))
-        .route("/api/scenarios/:scenario_id", get(routes::get_scenario))
         .route("/", get(index_handler))
         .route("/index.html", get(index_handler))
         .route("/*file", get(static_handler))

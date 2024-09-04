@@ -14,15 +14,10 @@ Cardamon is a tool to help development teams measure the power consumption and c
 - [Installation](#installation)
 - [CLI Reference](#cli-reference)
 - [Configuration](#configuration)
-- [Scenarios](#scenarios)
-- [Live Monitor](#live-monitor)
+- [Scenarios](#scenarios)(#live-monitor)
+- [Developers](#developers)
 - [FAQ](#faq)
 - [License](#license)
-
-## Environment Variables
-
-DATABASE_URL (do not include database name for postgresql or mysql)
-DATABASE_NAME (only required for postgresql and mysql)
 
 ## Installation
 
@@ -57,11 +52,29 @@ Coming soon!
 
 Coming soon!
 
-## Live Monitor
+## Developers
 
-Coming soon!
+### Environment Variables
 
-# FAQ
+**DATABASE_URL**
+Connection string to the database
+
+examples:
+`sqlite://cardamon.db?mode=rwc` (rwc required to create db file if it doesn't exist)
+`postgresql://postgres@localhost:5432` (don't include db name for postgres or mysql)
+
+**DATABASE_NAME**
+only required for postgres and mysql
+
+### Migrations
+
+`cargo run --bin migrator -- <COMMAND>`
+
+### Generating Entities
+
+`sea-orm-cli generate entity -o src/entities`
+
+## FAQ
 
 ### Can I use Cardamon on my own project or at my work?
 
