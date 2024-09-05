@@ -189,7 +189,6 @@ mod tests {
         let cpu_usage = metrics_log.iter().fold(0_f64, |acc, metrics| {
             acc + metrics.cpu_usage / metrics.core_count as f64
         }) / iterations as f64;
-        println!("{cpu_usage}");
         assert!(cpu_usage > 0_f64);
 
         Ok(())

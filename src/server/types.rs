@@ -15,30 +15,30 @@ pub struct ScenariosParams {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScenariosResponse {
-    pub scenario_data: Vec<ScenarioData>,
+    pub scenario_data: Vec<ScenarioDataResponse>,
     pub pagination: Pagination,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScenarioData {
+pub struct ScenarioDataResponse {
     pub scenario_name: String,
-    pub run_data: Vec<RunData>,
+    pub run_data: Vec<RunDataResponse>,
     pub trend: f64,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RunData {
+pub struct RunDataResponse {
     pub run_id: i32,
     pub run_pow: f64,
     pub run_co2: f64,
-    pub proc_data: Vec<ProcessData>,
+    pub proc_data: Vec<ProcessDataResponse>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProcessData {
+pub struct ProcessDataResponse {
     pub proc_id: String,
     pub pow: f64,
     pub co2: f64,

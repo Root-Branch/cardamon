@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Run::CpuAvgPower).integer().not_null())
+                    .col(ColumnDef::new(Run::CpuAvgPower).float().not_null())
                     .col(ColumnDef::new(Run::StartTime).big_integer().not_null())
                     .col(ColumnDef::new(Run::StopTime).big_integer())
                     .to_owned(),
