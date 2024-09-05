@@ -226,9 +226,9 @@ impl<'a> DatasetRows<'a> {
         // for each scenario get the associated iterations in the last n runs
         let mut iterations = vec![];
         for scenario in scenarios {
-            let scenario_iterations =
+            let mut scenario_iterations =
                 dao::iteration::fetch_runs_last_n(&scenario.scenario_name, n, self.db).await?;
-            iterations.extend(scenario_iterations);
+            iterations.append(&mut scenario_iterations);
         }
 
         // marry up iterations with metrics
@@ -490,6 +490,10 @@ impl<'a> ScenarioRunDataset<'a> {
         self.run_id
     }
 
+    pub fn data(&'a self) -> &'a [&'a IterationMetrics] {
+        &self.data
+    }
+
     pub fn by_iteration(&'a self) -> ScenarioRunIterationDataset {
         &self.data
     }
@@ -499,41 +503,233 @@ type ScenarioRunIterationDataset<'a> = &'a [&'a IterationMetrics];
 
 #[cfg(test)]
 mod tests {
-    //     use crate::dao::{DataAccessService, LocalDataAccessService};
-    //     use sqlx::SqlitePool;
-    //
-    //     #[sqlx::test(
-    //         migrations = "./migrations",
-    //         fixtures(
-    //             "../fixtures/runs.sql",
-    //             "../fixtures/scenario_iterations.sql",
-    //             "../fixtures/cpu_metrics.sql"
-    //         )
-    //     )]
-    //     async fn datasets_work(pool: SqlitePool) -> anyhow::Result<()> {
-    //         let dao_service = LocalDataAccessService::new(pool.clone());
-    //         let observation_dataset = dao_service
-    //             .fetch_observation_dataset(vec!["scenario_2"], 2)
-    //             .await?;
-    //
-    //         assert_eq!(observation_dataset.data().len(), 4);
-    //
-    //         let scenario_datasets = observation_dataset.by_scenario();
-    //         assert_eq!(scenario_datasets.len(), 1);
-    //
-    //         for scenario_dataset in scenario_datasets.iter() {
-    //             // println!("{:?}", scenario_dataset);
-    //             let run_datasets = scenario_dataset.by_run();
-    //             assert_eq!(run_datasets.len(), 2);
-    //
-    //             for run_dataset in run_datasets.iter() {
-    //                 // println!("{:?}", run_dataset);
-    //                 let avg = run_dataset.averaged();
-    //                 assert_eq!(avg.len(), 2);
-    //             }
-    //         }
-    //
-    //         pool.close().await;
-    //         Ok(())
-    //     }
+    use itertools::Itertools;
+
+    use crate::{dataset::DatasetBuilder, db_connect, db_migrate, tests::setup_fixtures};
+
+    #[tokio::test]
+    async fn dataset_builder_should_build_a_correct_dataset() -> anyhow::Result<()> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+                "./fixtures/metrics.sql",
+            ],
+            &db,
+        )
+        .await?;
+
+        let dataset = DatasetBuilder::new(&db)
+            .scenarios_all()
+            .all()
+            .last_n_runs(3)
+            .await?;
+
+        assert_eq!(dataset.data.len(), 14);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn dataset_can_be_broken_down_to_scenario_datasets() -> anyhow::Result<()> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+                "./fixtures/metrics.sql",
+            ],
+            &db,
+        )
+        .await?;
+
+        let dataset = DatasetBuilder::new(&db)
+            .scenarios_all()
+            .all()
+            .last_n_runs(3)
+            .await?;
+
+        let scenario_datasets = dataset.by_scenario();
+        assert_eq!(scenario_datasets.len(), 3);
+
+        // make sure the scenario names are correct
+        let scenario_names = scenario_datasets
+            .iter()
+            .map(|ds| ds.scenario_name)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            vec!["scenario_1", "scenario_2", "scenario_3"],
+            scenario_names
+        );
+
+        // make sure the data in the datasets are correct
+        for scenario_dataset in scenario_datasets {
+            match scenario_dataset.scenario_name {
+                "scenario_1" => {
+                    assert_eq!(scenario_dataset.data.len(), 1);
+                    assert!(
+                        scenario_dataset
+                            .data
+                            .iter()
+                            .flat_map(|x| &x.metrics)
+                            .collect_vec()
+                            .len()
+                            == 10
+                    );
+                }
+
+                "scenario_2" => {
+                    assert_eq!(scenario_dataset.data.len(), 4);
+                    assert!(
+                        scenario_dataset
+                            .data
+                            .iter()
+                            .flat_map(|x| &x.metrics)
+                            .collect_vec()
+                            .len()
+                            == 40
+                    );
+                }
+
+                "scenario_3" => {
+                    assert_eq!(scenario_dataset.data.len(), 9);
+                    assert!(
+                        scenario_dataset
+                            .data
+                            .iter()
+                            .flat_map(|x| &x.metrics)
+                            .collect_vec()
+                            .len()
+                            == 90
+                    );
+                }
+
+                _ => panic!("Unknown scenario in dataset"),
+            }
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scenario_dataset_can_be_broken_down_to_scenario_run_datasets() -> anyhow::Result<()> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+                "./fixtures/metrics.sql",
+            ],
+            &db,
+        )
+        .await?;
+
+        let dataset = DatasetBuilder::new(&db)
+            .scenarios_all()
+            .all()
+            .last_n_runs(3)
+            .await?;
+
+        for scenario_dataset in dataset.by_scenario() {
+            let scenario_run_datasets = scenario_dataset.by_run();
+
+            match scenario_dataset.scenario_name {
+                "scenario_1" => {
+                    assert_eq!(scenario_run_datasets.len(), 1);
+                    let run_ids = scenario_run_datasets
+                        .iter()
+                        .map(|ds| ds.run_id)
+                        .collect::<Vec<_>>();
+                    assert_eq!(vec![1], run_ids);
+                }
+
+                "scenario_2" => {
+                    assert_eq!(scenario_run_datasets.len(), 2);
+                    let run_ids = scenario_run_datasets
+                        .iter()
+                        .map(|ds| ds.run_id)
+                        .collect::<Vec<_>>();
+                    assert_eq!(vec![1, 2], run_ids);
+                }
+
+                "scenario_3" => {
+                    assert_eq!(scenario_run_datasets.len(), 3);
+                    let run_ids = scenario_run_datasets
+                        .iter()
+                        .map(|ds| ds.run_id)
+                        .collect::<Vec<_>>();
+                    assert_eq!(vec![1, 2, 3], run_ids);
+                }
+
+                _ => panic!("unknown scenario in dataset!"),
+            }
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scenario_run_dataset_can_be_broken_down_to_scenario_run_iteration_datasets(
+    ) -> anyhow::Result<()> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+                "./fixtures/metrics.sql",
+            ],
+            &db,
+        )
+        .await?;
+
+        let dataset = DatasetBuilder::new(&db)
+            .scenarios_all()
+            .all()
+            .last_n_runs(3)
+            .await?;
+
+        for scenario_dataset in dataset.by_scenario() {
+            for scenario_run_dataset in scenario_dataset.by_run() {
+                let scenario_run_iteration_datasets = scenario_run_dataset.by_iteration();
+
+                match scenario_dataset.scenario_name {
+                    "scenario_1" => {
+                        assert_eq!(scenario_run_iteration_datasets.len(), 1);
+                        let it_ids = scenario_run_iteration_datasets
+                            .iter()
+                            .map(|ds| ds.iteration.count)
+                            .collect::<Vec<_>>();
+                        assert_eq!(vec![1], it_ids);
+                    }
+
+                    "scenario_2" => {
+                        assert_eq!(scenario_run_iteration_datasets.len(), 2);
+                        let it_ids = scenario_run_iteration_datasets
+                            .iter()
+                            .map(|ds| ds.iteration.count)
+                            .collect::<Vec<_>>();
+                        assert_eq!(vec![1, 2], it_ids);
+                    }
+
+                    "scenario_3" => {
+                        assert_eq!(scenario_run_iteration_datasets.len(), 3);
+                        let it_ids = scenario_run_iteration_datasets
+                            .iter()
+                            .map(|ds| ds.iteration.count)
+                            .collect::<Vec<_>>();
+                        assert_eq!(vec![1, 2, 3], it_ids);
+                    }
+
+                    _ => panic!("unknown scenario in dataset!"),
+                }
+            }
+        }
+
+        Ok(())
+    }
 }

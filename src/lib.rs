@@ -8,7 +8,10 @@ pub mod migrations;
 pub mod models;
 pub mod server;
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    migrations::{Migrator, MigratorTrait},
+};
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use colored::Colorize;
@@ -164,6 +167,53 @@ pub async fn init_config() {
             println!("\n😭\n");
         }
     }
+}
+
+pub async fn db_connect(
+    database_url: &str,
+    database_name: Option<&str>,
+) -> anyhow::Result<DatabaseConnection> {
+    let db = Database::connect(database_url).await?;
+    match db.get_database_backend() {
+        DbBackend::Sqlite => Ok(db),
+
+        DbBackend::Postgres => {
+            let database_name =
+                database_name.context("Database name is required for postgres connections")?;
+            db.execute(Statement::from_string(
+                db.get_database_backend(),
+                format!("CREATE DATABASE \"{}\";", database_name),
+            ))
+            .await
+            .ok();
+
+            let url = format!("{}/{}", database_url, database_name);
+            Database::connect(&url)
+                .await
+                .context("Error creating postgresql database.")
+        }
+
+        DbBackend::MySql => {
+            let database_name =
+                database_name.context("Database name is required for mysql connections")?;
+            db.execute(Statement::from_string(
+                db.get_database_backend(),
+                format!("CREATE DATABASE IF NOT EXISTS `{}`;", database_name),
+            ))
+            .await?;
+
+            let url = format!("{}/{}", database_url, database_name);
+            Database::connect(&url)
+                .await
+                .context("Error creating mysql database.")
+        }
+    }
+}
+
+pub async fn db_migrate(db_conn: &DatabaseConnection) -> anyhow::Result<()> {
+    Migrator::up(db_conn, None)
+        .await
+        .context("Error migrating database.")
 }
 
 /// Deletes previous runs .stdout and .stderr
@@ -385,6 +435,7 @@ fn shutdown_application(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
+    cpu_avg_power: f32,
     db: &DatabaseConnection,
 ) -> anyhow::Result<Dataset> {
     let mut run_id: i32 = 0;
@@ -412,6 +463,7 @@ pub async fn run<'a>(
         // create a new run
         let mut active_run = run::ActiveModel {
             id: sea_orm::ActiveValue::NotSet,
+            cpu_avg_power: sea_orm::ActiveValue::Set(cpu_avg_power),
             start_time: sea_orm::ActiveValue::Set(start_time),
             stop_time: sea_orm::ActiveValue::set(None),
         }
@@ -477,7 +529,7 @@ pub async fn run<'a>(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::{
         config::{ProcessToExecute, ProcessType},
@@ -485,6 +537,18 @@ mod tests {
     };
     use std::time::Duration;
     use sysinfo::{Pid, System};
+
+    pub async fn setup_fixtures(fixtures: &[&str], db: &DatabaseConnection) -> anyhow::Result<()> {
+        for path in fixtures {
+            let path = Path::new(path);
+            let stmt = std::fs::read_to_string(path)?;
+            db.query_one(Statement::from_string(DatabaseBackend::Sqlite, stmt))
+                .await
+                .context(format!("Error applying fixture {:?}", path))?;
+        }
+
+        Ok(())
+    }
 
     #[test]
     fn should_find_cpu() {

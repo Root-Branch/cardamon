@@ -168,7 +168,7 @@ impl Config {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct Computer {
     pub cpu_name: String,
-    pub cpu_avg_power: f64,
+    pub cpu_avg_power: f32,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone, Copy, Serialize)]

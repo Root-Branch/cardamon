@@ -34,14 +34,6 @@ pub async fn fetch_runs_all(
     }
     .context("Error fetching all iterations")?;
 
-    // // group iterations into runs
-    // let by_runs = res.into_iter().into_group_map_by(|it| it.run_id);
-    //
-    // let res: Vec<RunIterations> = vec![];
-    // for (run_id, iterations) in by_runs.into_iter() {
-    //     res.push(RunIterations { run_id, iterations })
-    // }
-
     Ok((res, count))
 }
 
@@ -114,34 +106,46 @@ pub async fn fetch_runs_last_n(
     ))
 }
 
-// pub async fn fetch_unique_run_ids(
-//     scenario: &str,
-//     db: &DatabaseConnection,
-// ) -> anyhow::Result<Vec<RunId>> {
-//     let query = iteration::Entity::find()
-//         .distinct_on([iteration::Column::RunId])
-//         .filter(iteration::Column::ScenarioName.eq(scenario))
-//         .order_by_desc(iteration::Column::StartTime)
-//         .into_partial_model::<RunId>();
-//
-//     query.all(db).await.context("Error fetching unique run ids")
-// }
-//
-// pub async fn fetch_by_scenario_and_run(
-//     scenario: &str,
-//     run_id: i32,
-//     db: &DatabaseConnection,
-// ) -> anyhow::Result<Vec<iteration::Model>> {
-//     let query = iteration::Entity::find()
-//         .filter(
-//             Condition::all()
-//                 .add(iteration::Column::ScenarioName.eq(scenario))
-//                 .add(iteration::Column::RunId.eq(run_id)),
-//         )
-//         .order_by_asc(iteration::Column::StartTime);
-//
-//     query
-//         .all(db)
-//         .await
-//         .context("Error fetching iterations by scenario and run")
-// }
+#[cfg(test)]
+mod tests {
+    use crate::{dao, db_connect, db_migrate, tests::setup_fixtures};
+
+    #[tokio::test]
+    async fn fetch_iterations_of_last_n_runs_for_schema() -> anyhow::Result<()> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(&["./fixtures/runs.sql", "./fixtures/iterations.sql"], &db).await?;
+
+        // fetch the latest scenario_1 run
+        let scenario_iterations = dao::iteration::fetch_runs_last_n("scenario_1", 1, &db).await?;
+
+        let run_ids = scenario_iterations
+            .iter()
+            .map(|run| run.run_id)
+            .collect::<Vec<_>>();
+        assert_eq!(run_ids, vec![1]);
+
+        let iterations = scenario_iterations
+            .iter()
+            .map(|run| run.count)
+            .collect::<Vec<_>>();
+        assert_eq!(iterations, vec![1]);
+
+        // fetch the last 2 scenario_3 runs
+        let scenario_iterations = dao::iteration::fetch_runs_last_n("scenario_3", 2, &db).await?;
+
+        let run_ids = scenario_iterations
+            .iter()
+            .map(|run| run.run_id)
+            .collect::<Vec<_>>();
+        assert_eq!(run_ids, vec![2, 2, 2, 3, 3, 3]);
+
+        let iterations = scenario_iterations
+            .iter()
+            .map(|run| run.count)
+            .collect::<Vec<_>>();
+        assert_eq!(iterations, vec![1, 2, 3, 1, 2, 3]);
+
+        Ok(())
+    }
+}

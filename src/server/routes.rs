@@ -1,10 +1,14 @@
+use std::collections::HashMap;
+
 use crate::{
-    dataset::DatasetBuilder,
-    models,
+    dao,
+    dataset::{Dataset, DatasetBuilder},
+    models::{self, CardamonData},
     server::{
         errors::ServerError,
         types::{
-            Pagination, ProcessData, RunData, ScenarioData, ScenariosParams, ScenariosResponse,
+            Pagination, ProcessDataResponse, RunDataResponse, ScenarioDataResponse,
+            ScenariosParams, ScenariosResponse,
         },
     },
 };
@@ -13,8 +17,107 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use itertools::Itertools;
 use sea_orm::DatabaseConnection;
 use tracing::{info, instrument};
+
+pub async fn build_scenario_data(
+    dataset: &Dataset,
+    db: &DatabaseConnection,
+) -> anyhow::Result<Vec<ScenarioDataResponse>> {
+    let mut scenario_data: Vec<ScenarioDataResponse> = vec![];
+    for scenario_dataset in dataset.by_scenario() {
+        let scenario_name = scenario_dataset.scenario_name().to_string();
+
+        let mut run_data: Vec<RunDataResponse> = vec![];
+        for scenario_run_dataset in scenario_dataset.by_run() {
+            let run_id = scenario_run_dataset.run_id();
+
+            // fetch cpu avgerage power
+            let cpu_avg_pow = dao::run::fetch(run_id, &db).await?.cpu_avg_power;
+
+            // fetch carbon intensity
+            let carbon_intensity = 23.0;
+
+            // build up process map
+            // proc_id  |  data for proc per iteration
+            // =======================================
+            // proc_id -> [<data>, <data>]             <- 2 iterations
+            // proc_id -> [<data>, <data>]
+            let mut proc_iteration_data_map: HashMap<String, Vec<CardamonData>> = HashMap::new();
+            for scenario_run_iteration_dataset in scenario_run_dataset.by_iteration() {
+                for (proc_id, metrics) in scenario_run_iteration_dataset.by_process() {
+                    // run the RAB model to get power and co2 emissions
+                    let cardamon_data =
+                        models::rab_linear_model(metrics, cpu_avg_pow, carbon_intensity);
+
+                    // if key already exists in map the append cardamon_data to the end of the
+                    // iteration data vector for that key, else create a new vector for that key.
+                    let data_vec = match proc_iteration_data_map.get_mut(&proc_id) {
+                        Some(data) => {
+                            let mut it_data = vec![];
+                            it_data.append(data);
+                            it_data.push(cardamon_data);
+                            it_data
+                        }
+
+                        None => vec![cardamon_data],
+                    };
+                    proc_iteration_data_map.insert(proc_id.to_string(), data_vec);
+                }
+            }
+
+            // average data for each process across all iterations
+            let proc_data_map: HashMap<String, CardamonData> = proc_iteration_data_map
+                .iter()
+                .map(|(k, v)| (k, v.iter().collect_vec()))
+                .map(|(k, v)| (k.to_string(), CardamonData::mean(&v)))
+                .collect();
+
+            // calculate total run data (pow + co2)
+            let run_total = CardamonData::sum(&proc_data_map.values().collect_vec());
+
+            // convert proc_data_map to vector of ProcessData
+            let proc_data = proc_data_map
+                .into_iter()
+                .map(|(proc_id, data)| ProcessDataResponse {
+                    proc_id,
+                    pow: data.pow,
+                    co2: data.co2,
+                    pow_perc: data.pow / run_total.pow,
+                })
+                .collect_vec();
+
+            run_data.push(RunDataResponse {
+                run_id,
+                run_pow: run_total.pow,
+                run_co2: run_total.co2,
+                proc_data,
+            })
+        }
+
+        // calculate trend
+        let mut delta_sum = 0_f64;
+        let mut delta_sum_abs = 0_f64;
+        for i in 0..run_data.len() - 1 {
+            let delta = run_data[i + 1].run_pow - run_data[i].run_pow;
+            delta_sum += delta;
+            delta_sum_abs += delta.abs();
+        }
+
+        scenario_data.push(ScenarioDataResponse {
+            scenario_name,
+            run_data,
+            trend: if delta_sum_abs != 0_f64 {
+                delta_sum / delta_sum_abs
+            } else {
+                0_f64
+            },
+        })
+    }
+
+    Ok(scenario_data)
+}
 
 #[instrument(name = "Get list of scenarios")]
 pub async fn get_scenarios(
@@ -48,80 +151,51 @@ pub async fn get_scenarios(
         }
     };
 
-    let mut scenario_data: Vec<ScenarioData> = vec![];
-    for sc_ds in dataset.by_scenario() {
-        let scenario_name = sc_ds.scenario_name().to_string();
-
-        let mut run_data: Vec<RunData> = vec![];
-        for sc_run_ds in sc_ds.by_run() {
-            let run_id = sc_run_ds.run_id();
-
-            let mut run_pow = 0_f64;
-            let mut run_co2 = 0_f64;
-            let mut proc_data: Vec<ProcessData> = vec![];
-            let sc_run_its_ds = sc_run_ds.by_iteration();
-            for sc_run_it_ds in sc_run_its_ds {
-                let mut it_pow = 0_f64;
-                let mut it_co2 = 0_f64;
-
-                for (proc_id, metrics) in sc_run_it_ds.by_process() {
-                    let cardamon_data_for_proc =
-                        models::rab_linear_model(metrics, 42_f64, 1337_f64);
-                    let pow = cardamon_data_for_proc.pow;
-                    let co2 = cardamon_data_for_proc.co2;
-
-                    it_pow += pow;
-                    it_co2 += co2;
-                    proc_data.push(ProcessData {
-                        proc_id,
-                        pow,
-                        co2,
-                        pow_perc: 0_f64,
-                    });
-                }
-
-                run_pow += it_pow;
-                run_co2 += it_co2;
-
-                // calculate pow perc for each process
-                for proc_data in proc_data.iter_mut() {
-                    proc_data.pow_perc = proc_data.pow / it_pow;
-                }
-            }
-            let it_count = sc_run_its_ds.len() as f64;
-            run_pow /= it_count;
-            run_co2 /= it_count;
-
-            run_data.push(RunData {
-                run_id,
-                run_pow,
-                run_co2,
-                proc_data,
-            })
-        }
-
-        // calculate trend
-        let mut delta_sum = 0_f64;
-        let mut delta_sum_abs = 0_f64;
-        for i in 0..run_data.len() - 1 {
-            let delta = run_data[i + 1].run_pow - run_data[i].run_pow;
-            delta_sum += delta;
-            delta_sum_abs += delta.abs();
-        }
-
-        scenario_data.push(ScenarioData {
-            scenario_name,
-            run_data,
-            trend: delta_sum / delta_sum_abs,
-        })
-    }
+    let scenario_data = build_scenario_data(&dataset, &db).await?;
 
     Ok(Json(ScenariosResponse {
         scenario_data,
         pagination: Pagination {
-            current_page: page,
+            current_page: page + 1,
             per_page: limit,
             total_pages: dataset.total_scenarios / limit,
         },
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        dataset::DatasetBuilder, db_connect, db_migrate, server::routes::build_scenario_data,
+        tests::setup_fixtures,
+    };
+
+    #[tokio::test]
+    async fn building_data_response_for_ui_should_work() -> anyhow::Result<()> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+                "./fixtures/metrics.sql",
+            ],
+            &db,
+        )
+        .await?;
+
+        let dataset = DatasetBuilder::new(&db)
+            .scenarios_all()
+            .all()
+            .last_n_runs(3)
+            .await?;
+
+        let _res = build_scenario_data(&dataset, &db).await?;
+
+        // uncomment to see generated json response
+        // let json_str = serde_json::to_string_pretty(&_res)?;
+        // println!("{}", json_str);
+
+        Ok(())
+    }
 }

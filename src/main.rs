@@ -2,13 +2,10 @@ use anyhow::Context;
 use cardamon::{
     cleanup_stdout_stderr,
     config::{self, ProcessToObserve},
-    init_config,
-    migrations::{Migrator, MigratorTrait},
-    run, server,
+    db_connect, db_migrate, init_config, run, server,
 };
 use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
-use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement};
 use std::{env, path::Path};
 use tracing::{trace, Level};
 
@@ -54,50 +51,6 @@ pub enum Commands {
     Init,
 }
 
-async fn db_connect() -> anyhow::Result<DatabaseConnection> {
-    let database_url =
-        &env::var("DATABASE_URL").unwrap_or("sqlite://cardamon.db?mode=rwc".to_string());
-    let database_name = &env::var("DATABASE_NAME").unwrap_or("".to_string());
-
-    let db = Database::connect(database_url).await?;
-    match db.get_database_backend() {
-        DbBackend::Sqlite => Ok(db),
-
-        DbBackend::Postgres => {
-            db.execute(Statement::from_string(
-                db.get_database_backend(),
-                format!("CREATE DATABASE \"{}\";", database_name),
-            ))
-            .await
-            .ok();
-
-            let url = format!("{}/{}", database_url, database_name);
-            Database::connect(&url)
-                .await
-                .context("Error creating postgresql database.")
-        }
-
-        DbBackend::MySql => {
-            db.execute(Statement::from_string(
-                db.get_database_backend(),
-                format!("CREATE DATABASE IF NOT EXISTS `{}`;", database_name),
-            ))
-            .await?;
-
-            let url = format!("{}/{}", database_url, database_name);
-            Database::connect(&url)
-                .await
-                .context("Error creating mysql database.")
-        }
-    }
-}
-
-async fn db_migrate(db_conn: &DatabaseConnection) -> anyhow::Result<()> {
-    Migrator::up(db_conn, None)
-        .await
-        .context("Error migrating database.")
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // read .env file if it exists
@@ -125,7 +78,10 @@ async fn main() -> anyhow::Result<()> {
     trace!("Setup subscriber for logging");
 
     // connect to the database and run migrations
-    let db_conn = db_connect().await?;
+    let database_url =
+        env::var("DATABASE_URL").unwrap_or("sqlite://cardamon.db?mode=rwc".to_string());
+    let database_name = env::var("DATABASE_NAME").unwrap_or("".to_string());
+    let db_conn = db_connect(&database_url, Some(&database_name)).await?;
     db_migrate(&db_conn).await?;
 
     match args.command {
@@ -166,7 +122,8 @@ async fn main() -> anyhow::Result<()> {
             cleanup_stdout_stderr()?;
 
             // run it!
-            let observation_dataset = run(execution_plan, &db_conn).await?;
+            let observation_dataset =
+                run(execution_plan, config.computer.cpu_avg_power, &db_conn).await?;
 
             for scenario_dataset in observation_dataset.by_scenario().iter() {
                 println!("Scenario: {:?}", scenario_dataset.scenario_name());

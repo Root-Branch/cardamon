@@ -14,7 +14,9 @@ pub async fn fetch_all(
     db: &DatabaseConnection,
 ) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
     let query = iteration::Entity::find()
-        .distinct_on([iteration::Column::ScenarioName])
+        .select_only()
+        .select_column(iteration::Column::ScenarioName)
+        .distinct()
         .order_by_asc(iteration::Column::StartTime);
 
     let count = query
@@ -40,7 +42,9 @@ pub async fn fetch_in_run(
     db: &DatabaseConnection,
 ) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
     let query = iteration::Entity::find()
-        .distinct_on([iteration::Column::ScenarioName])
+        .select_only()
+        .select_column(iteration::Column::ScenarioName)
+        .distinct()
         .filter(iteration::Column::RunId.eq(run))
         .order_by_asc(iteration::Column::StartTime);
 
@@ -69,7 +73,9 @@ pub async fn fetch_in_range(
     db: &DatabaseConnection,
 ) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
     let query = iteration::Entity::find()
-        .distinct_on([iteration::Column::ScenarioName])
+        .select_only()
+        .select_column(iteration::Column::ScenarioName)
+        .distinct()
         .filter(
             Condition::all()
                 .add(iteration::Column::StopTime.gt(from))
@@ -102,7 +108,9 @@ pub async fn fetch_by_name(
     db: &DatabaseConnection,
 ) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
     let query = iteration::Entity::find()
-        .distinct_on([iteration::Column::ScenarioName])
+        .select_only()
+        .select_column(iteration::Column::ScenarioName)
+        .distinct()
         .filter(iteration::Column::ScenarioName.like(name))
         .order_by_asc(iteration::Column::StartTime);
 
