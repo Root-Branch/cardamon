@@ -135,10 +135,14 @@ impl Config {
             scenarios.push(scenario);
         }
 
-        let mut scenarios_to_execute = vec![];
-        for scenario in scenarios {
-            scenarios_to_execute.append(&mut scenario.build_scenarios_to_execute());
-        }
+        // let mut scenarios_to_execute = vec![];
+        // for scenario in scenarios {
+        //     scenarios_to_execute.append(&mut scenario.build_scenarios_to_execute());
+        // }
+        let scenarios_to_execute = scenarios
+            .iter()
+            .map(|sc| ScenarioToExecute::new(sc))
+            .collect_vec();
 
         Ok(scenarios_to_execute)
     }
@@ -187,16 +191,6 @@ pub struct Scenario {
     pub iterations: i32,
     pub processes: Vec<String>,
 }
-impl Scenario {
-    fn build_scenarios_to_execute(&self) -> Vec<ScenarioToExecute> {
-        let mut scenarios_to_execute = vec![];
-        for i in 0..self.iterations {
-            let scenario_to_exec = ScenarioToExecute::new(self, i);
-            scenarios_to_execute.push(scenario_to_exec);
-        }
-        scenarios_to_execute
-    }
-}
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -223,14 +217,10 @@ pub enum ProcessToObserve {
 #[derive(Debug)]
 pub struct ScenarioToExecute<'a> {
     pub scenario: &'a Scenario,
-    pub iteration: i32,
 }
 impl<'a> ScenarioToExecute<'a> {
-    fn new(scenario: &'a Scenario, iteration: i32) -> Self {
-        Self {
-            scenario,
-            iteration,
-        }
+    fn new(scenario: &'a Scenario) -> Self {
+        Self { scenario }
     }
 }
 
@@ -319,19 +309,13 @@ mod tests {
     #[test]
     fn collecting_processes_works() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
-        let scenario1 = cfg
-            .find_scenario("user_signup")
-            .unwrap()
-            .build_scenarios_to_execute();
-        let scenario2 = cfg
-            .find_scenario("basket_10")
-            .unwrap()
-            .build_scenarios_to_execute();
+        let scenario1 = cfg.find_scenario("user_signup").unwrap();
+        let scenario2 = cfg.find_scenario("basket_10").unwrap();
 
         let scenarios_to_execute = vec![scenario1, scenario2]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
+            .iter()
+            .map(|sc| ScenarioToExecute::new(sc))
+            .collect_vec();
 
         let process_names = cfg
             .collect_processes(&scenarios_to_execute)?
@@ -354,7 +338,7 @@ mod tests {
         let scenario = cfg
             .find_scenario("basket_10")
             .expect("scenario 'basket_10' should exist!");
-        let scenarios_to_execute = scenario.build_scenarios_to_execute();
+        let scenarios_to_execute = vec![ScenarioToExecute::new(scenario)];
         assert_eq!(scenarios_to_execute.len(), 2);
         Ok(())
     }

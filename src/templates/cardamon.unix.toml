@@ -57,7 +57,7 @@
 [[processes]]
 name = "test_proc"
 up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
-down = "pkill {pid}"
+down = "kill {pid}"
 redirect.to = "file"
 process.type = "baremetal"
 

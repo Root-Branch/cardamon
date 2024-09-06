@@ -61,7 +61,7 @@ cpu_avg_power = 11.223
 [[processes]]
 name = "test_proc"
 up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
-down = "pkill {pid}"
+down = "kill {pid}"
 redirect.to = "file"
 process.type = "baremetal"
 
@@ -128,3 +128,4 @@ processes = ["test_proc"]
 [[observations]]
 name = "test_obs"
 scenarios = ["sleep"]
+
