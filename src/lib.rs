@@ -328,6 +328,7 @@ fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToO
 async fn run_scenario<'a>(
     run_id: i32,
     scenario_to_execute: &ScenarioToExecute<'a>,
+    iteration: i32,
 ) -> anyhow::Result<iteration::ActiveModel> {
     let start = Utc::now().timestamp_millis();
 
@@ -346,8 +347,7 @@ async fn run_scenario<'a>(
     // run scenario ...
     println!(
         "Running scenario {} iteration {}",
-        scenario_to_execute.scenario.name,
-        scenario_to_execute.iteration + 1
+        scenario_to_execute.scenario.name, iteration
     );
     let output = tokio::process::Command::new(command)
         .args(args)
@@ -363,7 +363,7 @@ async fn run_scenario<'a>(
             id: ActiveValue::NotSet,
             run_id: ActiveValue::Set(run_id),
             scenario_name: ActiveValue::Set(scenario_to_execute.scenario.name.clone()),
-            count: ActiveValue::Set(scenario_to_execute.iteration),
+            count: ActiveValue::Set(iteration),
             start_time: ActiveValue::Set(start),
             stop_time: ActiveValue::Set(stop),
         };
@@ -388,11 +388,13 @@ fn shutdown_application(
         if let Some(down_command) = &proc.down {
             match proc.process {
                 ProcessType::BareMetal => {
+                    println!("{:?}", down_command);
                     // find the pid associated with this process
                     let pid = running_processes.iter().find_map(|p| match p {
                         ProcessToObserve::Pid(Some(name), pid) if name == &proc.name => Some(*pid),
                         _ => None,
                     });
+                    println!("{:?}", pid);
 
                     // if pid can't be found then log an error
                     if let Some(pid) = pid {
@@ -450,13 +452,8 @@ pub async fn run<'a>(
         }
     }
 
-    // record the cardamon run
-
     // ---- for each scenario ----
     for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
-        // start the metrics loggers
-        let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
-
         let start_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
                                                         // timezones
 
@@ -473,19 +470,32 @@ pub async fn run<'a>(
         // get the new run id
         run_id = active_run.clone().try_into_model()?.id;
 
-        // run the scenario
-        let scenario_iteration = run_scenario(run_id, scenario_to_execute).await?;
+        // for each iteration
+        for iteration in 0..scenario_to_execute.scenario.iterations {
+            // start the metrics loggers
+            let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
-        // stop the metrics loggers
-        let metrics_log = stop_handle.stop().await?;
+            // run the scenario
+            let scenario_iteration = run_scenario(run_id, scenario_to_execute, iteration).await?;
 
-        // if metrics log contains errors then display them to the user and don't save anything
-        if metrics_log.has_errors() {
-            // log all the errors
-            for err in metrics_log.get_errors() {
-                tracing::error!("{}", err);
+            // stop the metrics loggers
+            let metrics_log = stop_handle.stop().await?;
+
+            // if metrics log contains errors then display them to the user and don't save anything
+            if metrics_log.has_errors() {
+                // log all the errors
+                for err in metrics_log.get_errors() {
+                    tracing::error!("{}", err);
+                }
+                return Err(anyhow!("Metric log contained errors, please see logs."));
             }
-            return Err(anyhow!("Metric log contained errors, please see logs."));
+            //
+            // save the scenario iteration
+            scenario_iteration.save(db).await?;
+
+            for metrics in metrics_log.get_metrics() {
+                metrics.into_active_model(run_id).save(db).await?;
+            }
         }
 
         // write scenario and metrics to db
@@ -497,15 +507,6 @@ pub async fn run<'a>(
         // update run with the stop time
         active_run.stop_time = ActiveValue::Set(Some(stop_time));
         active_run.save(db).await?;
-
-        // println!("got here!");
-
-        // save the scenario iteration
-        scenario_iteration.save(db).await?;
-
-        for metrics in metrics_log.get_metrics() {
-            metrics.into_active_model(run_id).save(db).await?;
-        }
     }
 
     // stop the application
