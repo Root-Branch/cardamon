@@ -1,6 +1,6 @@
 pub mod config;
 pub mod dao;
-pub mod dataset;
+pub mod data;
 pub mod entities;
 pub mod metrics;
 pub mod metrics_logger;
@@ -10,13 +10,13 @@ pub mod server;
 
 use crate::{
     config::Config,
+    data::{dataset::Dataset, dataset_builder::DatasetBuilder},
     migrations::{Migrator, MigratorTrait},
 };
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use colored::Colorize;
 use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
-use dataset::{Dataset, DatasetBuilder};
 use entities::{iteration, run};
 use sea_orm::*;
 use serde_json::Value;
@@ -345,10 +345,6 @@ async fn run_scenario<'a>(
     let args = &command_parts[1..];
 
     // run scenario ...
-    println!(
-        "Running scenario {} iteration {}",
-        scenario_to_execute.scenario.name, iteration
-    );
     let output = tokio::process::Command::new(command)
         .args(args)
         .kill_on_drop(true)
@@ -388,13 +384,13 @@ fn shutdown_application(
         if let Some(down_command) = &proc.down {
             match proc.process {
                 ProcessType::BareMetal => {
-                    println!("{:?}", down_command);
+                    print!("> stopping process {}", proc.name.green());
+
                     // find the pid associated with this process
                     let pid = running_processes.iter().find_map(|p| match p {
                         ProcessToObserve::Pid(Some(name), pid) if name == &proc.name => Some(*pid),
                         _ => None,
                     });
-                    println!("{:?}", pid);
 
                     // if pid can't be found then log an error
                     if let Some(pid) = pid {
@@ -409,12 +405,17 @@ fn shutdown_application(
                                 proc.name,
                                 err
                             );
+                            println!();
+                        } else {
+                            println!("\t{}", "✓".green());
+                            println!("\t{}", format!("- {}", down_command).bright_black());
                         }
                     } else {
                         tracing::warn!(
                             "Unable to find PID for bare-metal process with name: {}",
                             proc.name
                         );
+                        println!();
                     }
                 }
                 ProcessType::Docker { containers: _ } => {
@@ -426,6 +427,10 @@ fn shutdown_application(
                             proc.name,
                             err
                         );
+                        println!();
+                    } else {
+                        println!("\t{}", "✓".green());
+                        println!("\t{}", format!("- {}", down_command).bright_black());
                     }
                 }
             }
@@ -447,8 +452,11 @@ pub async fn run<'a>(
     // run the application if there is anything to run
     if !exec_plan.processes_to_execute.is_empty() {
         for proc in exec_plan.processes_to_execute.iter() {
+            print!("> starting process {}", proc.name.green());
             let process_to_observe = run_process(proc)?;
             processes_to_observe.extend(process_to_observe);
+            println!("{}", "\t✓".green());
+            println!("\t{}", format!("- {}", proc.up).bright_black());
         }
     }
 
@@ -471,7 +479,14 @@ pub async fn run<'a>(
         run_id = active_run.clone().try_into_model()?.id;
 
         // for each iteration
-        for iteration in 0..scenario_to_execute.scenario.iterations {
+        for iteration in 1..scenario_to_execute.scenario.iterations + 1 {
+            println!(
+                "> running scenario {} - iteration {}/{}",
+                scenario_to_execute.scenario.name.green(),
+                iteration,
+                scenario_to_execute.scenario.iterations
+            );
+
             // start the metrics loggers
             let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
 
