@@ -2,10 +2,15 @@ use anyhow::Context;
 use cardamon::{
     cleanup_stdout_stderr,
     config::{self, ProcessToObserve},
-    db_connect, db_migrate, init_config, run, server,
+    data::Data,
+    db_connect, db_migrate, init_config,
+    models::rab_linear_model,
+    run, server,
 };
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use dotenvy::dotenv;
+use itertools::Itertools;
 use std::{env, path::Path};
 use tracing::{trace, Level};
 
@@ -71,6 +76,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Set up tracing subscriber
     let subscriber = tracing_subscriber::fmt()
+        .with_target(false)
+        .compact()
         .pretty()
         .with_max_level(log_level)
         .finish();
@@ -95,10 +102,18 @@ async fn main() -> anyhow::Result<()> {
             containers,
             external_only,
         } => {
+            println!("\n{}", " Cardamon ".reversed().green());
+
             // Initialize config if it exists
             let config = match &args.file {
-                Some(path) => config::Config::try_from_path(Path::new(path)),
-                None => config::Config::try_from_path(Path::new("./cardamon.toml")),
+                Some(path) => {
+                    println!("> using config {}", path.green());
+                    config::Config::try_from_path(Path::new(path))
+                }
+                None => {
+                    println!("> using config {}", "./cardamon.toml".green());
+                    config::Config::try_from_path(Path::new("./cardamon.toml"))
+                }
             }
             .context("Error loading configuration, please run `cardamon init`")?;
 
@@ -112,9 +127,11 @@ async fn main() -> anyhow::Result<()> {
             // add external processes to observe.
             for pid in pids.unwrap_or_default() {
                 let pid = pid.parse::<u32>()?;
+                println!("> including external process {}", pid.to_string().green());
                 execution_plan.observe_external_process(ProcessToObserve::Pid(None, pid));
             }
             for container_name in containers.unwrap_or_default() {
+                println!("> including external container {}", container_name.green());
                 execution_plan
                     .observe_external_process(ProcessToObserve::ContainerName(container_name));
             }
@@ -125,18 +142,40 @@ async fn main() -> anyhow::Result<()> {
             let observation_dataset =
                 run(execution_plan, config.computer.cpu_avg_power, &db_conn).await?;
 
+            println!("\n{}", " Summary ".reversed().green());
             for scenario_dataset in observation_dataset.by_scenario().iter() {
-                println!("Scenario: {:?}", scenario_dataset.scenario_name());
-                println!("--------------------------------");
+                let run_datasets = scenario_dataset.by_run();
 
-                for run_dataset in scenario_dataset.by_run().iter() {
-                    println!("Run: {:?}", run_dataset.run_id());
+                // execute model for current run
+                let f = rab_linear_model(42.0);
+                let (head, tail) = run_datasets
+                    .split_first()
+                    .expect("Dataset does not include recent run.");
+                let run_data = head.apply_model(&db_conn, &f).await?;
 
-                    // for avged_dataset in run_dataset.averaged().iter() {
-                    //     println!("\t{:?}", avged_dataset);
-                    // }
+                // execute model for previous runs and calculate trend
+                let mut tail_data = vec![];
+                for run_dataset in tail {
+                    let run_data = run_dataset.apply_model(&db_conn, &f).await?;
+                    tail_data.push(run_data.data);
                 }
+                let tail_data = Data::mean(&tail_data.iter().collect_vec());
+                let trend = run_data.data.pow - tail_data.pow;
+                let trend_str = if trend > 0.0 {
+                    format!("↓ {:.2} W", trend).green()
+                } else {
+                    format!("↑ {:.2} W", trend.abs()).red()
+                };
+
+                println!(
+                    "{}: Co2 {} | Power {} | Trend {}",
+                    scenario_dataset.scenario_name(),
+                    format!("{:.2} g", run_data.data.co2).green(),
+                    format!("{:.2} W", run_data.data.pow).green(),
+                    trend_str
+                )
             }
+            println!("\n{}", "trend compared to previous 3 runs".bright_black());
         }
 
         Commands::Ui { port } => {
