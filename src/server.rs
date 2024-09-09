@@ -4,6 +4,7 @@ mod routes;
 use anyhow::Context;
 use axum::response::{Html, IntoResponse, Response};
 use axum::{http::header, routing::get, Router};
+use colored::Colorize;
 use http::{StatusCode, Uri};
 use rust_embed::Embed;
 use sea_orm::DatabaseConnection;
@@ -83,13 +84,11 @@ async fn create_app(db: &DatabaseConnection) -> Router {
 pub async fn start(port: u32, db: &DatabaseConnection) -> anyhow::Result<()> {
     let app = create_app(db).await;
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
 
-    println!(
-        "Starting cardamon UI server.\n\nServer running at http://localhost:{}",
-        port
-    );
+    println!("\n{}", " Cardamon UI ".reversed().green());
+    println!("> Server started: visit http://localhost:{}", port);
     axum::serve(listener, app).await.context("Error serving UI")
 }
