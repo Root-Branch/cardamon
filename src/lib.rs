@@ -100,11 +100,7 @@ async fn fetch_tdp(cpu_name: &str) -> anyhow::Result<f64> {
 pub async fn init_config() {
     let cpu_name: String;
 
-    println!();
-    println!("🌱🌿🌳🌸🌸🌸🌸🌱🌿🌳");
-    println!("Welcome to Cardamon");
-    println!("🌱🌿🌳🌸🌸🌸🌸🌱🌿🌳");
-    println!();
+    println!("\n{}", " Setting up Cardamon ".reversed().green());
     loop {
         print!("Would you like to create a config for this computer [1] or another computer [2]? ");
         let _ = std::io::stdout().flush();

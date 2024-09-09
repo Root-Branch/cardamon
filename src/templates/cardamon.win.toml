@@ -124,28 +124,3 @@ processes = ["test_proc"]
 [[observations]]
 name = "test_obs"
 scenarios = ["sleep"]
-
-
-# [Starting application]
-# . starting process "test_proc"
-#     - `powershell sleep 15` <- if DEBUG grey
-# . process "test_proc" started
-#
-# [Waiting for system to settle]
-# . done
-#
-# [Running scenarios]
-# . running scenario "sleep" - iteration 1/2
-# . running scenario "sleep" - iteration 2/2
-# . scenario "sleep" complete
-#
-# [Stopping application]
-# . stopping process "test_proc"
-#     - `kill 1234`
-# . process "test_proc" stopped
-#
-# [Summary]
-# Power (W): 34   (0.5   ↑ avg*)
-# Co2 (g/W): 0.4  (0.002 ↑ avg*)
-#
-# * averge over 3 runs <- grey
