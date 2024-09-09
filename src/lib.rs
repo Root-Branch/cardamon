@@ -25,6 +25,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
+    sync::mpsc::channel,
 };
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
@@ -456,6 +457,14 @@ pub async fn run<'a>(
         }
     }
 
+    // set ctrlc handler
+    let (tx, rx) = channel();
+    ctrlc::set_handler(move || {
+        tx.send(())
+            .expect("Could not send ctrl-c signal for graceful shutdown")
+    })
+    .expect("");
+
     // ---- for each scenario ----
     for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
         let start_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
@@ -518,19 +527,20 @@ pub async fn run<'a>(
         // update run with the stop time
         active_run.stop_time = ActiveValue::Set(Some(stop_time));
         active_run.save(db).await?;
+
+        match rx.try_recv() {
+            Ok(_) => {
+                shutdown_application(&exec_plan, &processes_to_observe).expect(
+                    "Error gracefully shutting down application. Please cleanup processes manually.",
+                );
+                break;
+            }
+            Err(_) => continue,
+        }
     }
 
     // stop the application
     shutdown_application(&exec_plan, &processes_to_observe)?;
-
-    // create a summary to return to the user
-    // let scenario_names = exec_plan.scenario_names();
-    // let previous_runs = 3;
-    // let observation_dataset = dao_service
-    //     .fetch_observation_dataset(scenario_names, previous_runs)
-    //     .await?;
-    //
-    // Ok(observation_dataset)
 
     // create a dataset containing the data just collected
     DatasetBuilder::new(db)
