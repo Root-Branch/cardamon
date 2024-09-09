@@ -1,6 +1,5 @@
 mod errors;
-pub mod routes;
-mod types;
+mod routes;
 
 use anyhow::Context;
 use axum::response::{Html, IntoResponse, Response};

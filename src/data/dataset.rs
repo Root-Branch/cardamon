@@ -170,10 +170,24 @@ impl<'a> ScenarioDataset<'a> {
                 .collect_vec(),
         );
 
+        // calculate trend
+        let mut delta_sum = 0_f64;
+        let mut delta_sum_abs = 0_f64;
+        for i in 0..all_run_data.len() - 1 {
+            let delta = all_run_data[i + 1].data.pow - all_run_data[i].data.pow;
+            delta_sum += delta;
+            delta_sum_abs += delta.abs();
+        }
+
         Ok(ScenarioData {
             scenario_name: self.scenario_name.to_string(),
             data,
             run_data: all_run_data,
+            trend: if delta_sum_abs != 0_f64 {
+                delta_sum / delta_sum_abs
+            } else {
+                0_f64
+            },
         })
     }
 }
@@ -252,7 +266,11 @@ impl<'a> ScenarioRunDataset<'a> {
         // convert proc_data_map to vector of ProcessData
         let process_data = proc_data_map
             .into_iter()
-            .map(|(process_id, data)| ProcessData { process_id, data })
+            .map(|(process_id, data)| ProcessData {
+                process_id,
+                pow_perc: data.pow / total_run_data.pow,
+                data,
+            })
             .collect_vec();
 
         Ok(RunData {

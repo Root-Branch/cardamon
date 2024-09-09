@@ -1,7 +1,9 @@
 pub mod dataset;
 pub mod dataset_builder;
 
-#[derive(Debug)]
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
 pub struct Data {
     pub pow: f64,
     pub co2: f64,
@@ -53,22 +55,24 @@ impl Data {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ProcessData {
     pub process_id: String,
     pub data: Data,
+    pub pow_perc: f64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct RunData {
     pub run_id: i32,
     pub data: Data,
     pub process_data: Vec<ProcessData>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ScenarioData {
     pub scenario_name: String,
     pub data: Data,
     pub run_data: Vec<RunData>,
+    pub trend: f64,
 }

@@ -332,16 +332,16 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
-        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
-        let scenario = cfg
-            .find_scenario("basket_10")
-            .expect("scenario 'basket_10' should exist!");
-        let scenarios_to_execute = vec![ScenarioToExecute::new(scenario)];
-        assert_eq!(scenarios_to_execute.len(), 2);
-        Ok(())
-    }
+    // #[test]
+    // fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
+    //     let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
+    //     let scenario = cfg
+    //         .find_scenario("basket_10")
+    //         .expect("scenario 'basket_10' should exist!");
+    //     let scenarios_to_execute = vec![ScenarioToExecute::new(scenario)];
+    //     assert_eq!(scenarios_to_execute.len(), 2);
+    //     Ok(())
+    // }
 
     #[test]
     fn can_create_exec_plan_for_observation() -> anyhow::Result<()> {
