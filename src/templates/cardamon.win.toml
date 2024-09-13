@@ -46,7 +46,7 @@
 #
 # EXAMPLE
 # -------
-# [[processes]]
+# [[process]]
 # name = "db"
 # up = "docker compose up -d"
 # down = "docker compose down"
@@ -54,7 +54,7 @@
 # process.type = "docker"
 # process.containers = ["postgres"]
 
-[[processes]]
+[[process]]
 name = "test_proc"
 up = "powershell while($true) { get-random }" # Required
 down = "stop-process {pid}"
@@ -98,7 +98,7 @@ process.type = "baremetal"
 #            this scenario.
 #     required - true
 #
-[[scenarios]]
+[[scenario]]
 name = "sleep"
 desc = "Sleeps for 10 seconds, a real scenario would call your app"
 command = "powershell sleep 15"                                     # Required - commands for running scenarios
@@ -117,10 +117,18 @@ processes = ["test_proc"]
 #     desc - a unique name
 #     required - true
 #
-#   scenarios:
+#   observe.scenarios:
 #     type - string[]
-#     desc - a list of scenarios to execute
-#     required - true
-[[observations]]
+#     desc - a list of scenarios to execute whilst observing the processes 
+#            required to run all scenarios
+#     required - required if observe.processes is not defined
+#
+#   observe.processes:
+#     type - string[]
+#     desc - a list of processes to execute and observe. Running an observation
+#            with this property set runs Cardamon in Live mode.
+#     required - required if observe.scenarios is not defined.
+#
+[[observation]]
 name = "test_obs"
 scenarios = ["sleep"]

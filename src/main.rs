@@ -1,7 +1,7 @@
 use anyhow::Context;
 use cardamon::{
     cleanup_stdout_stderr,
-    config::{self, ProcessToObserve},
+    config::{self, Config, ExecutionPlan, ProcessToObserve},
     data::Data,
     db_connect, db_migrate, init_config,
     models::rab_linear_model,
@@ -26,9 +26,29 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    #[command(about = "Runs a single scenario or observation")]
+    #[command(about = "Runs a single observation")]
     Run {
-        #[arg(help = "Please provide a scenario or observation name")]
+        #[arg(help = "Please provide an observation name")]
+        name: String,
+
+        #[arg(value_name = "EXTERNAL PIDs", short, long, value_delimiter = ',')]
+        pids: Option<Vec<String>>,
+
+        #[arg(
+            value_name = "EXTERNAL CONTAINER NAMES",
+            short,
+            long,
+            value_delimiter = ','
+        )]
+        containers: Option<Vec<String>>,
+
+        #[arg(long)]
+        external_only: bool,
+    },
+
+    #[command(about = "Run continuously")]
+    Live {
+        #[arg(help = "Please provide a system name")]
         name: String,
 
         #[arg(value_name = "EXTERNAL PIDs", short, long, value_delimiter = ',')]
@@ -54,6 +74,38 @@ pub enum Commands {
 
     #[command(about = "Wizard for creating a cardamon.toml file")]
     Init,
+}
+
+fn load_config(file: &Option<String>) -> anyhow::Result<Config> {
+    // Initialize config if it exists
+    match file {
+        Some(path) => {
+            println!("> using config {}", path.green());
+            config::Config::try_from_path(Path::new(path))
+        }
+        None => {
+            println!("> using config {}", "./cardamon.toml".green());
+            config::Config::try_from_path(Path::new("./cardamon.toml"))
+        }
+    }
+}
+
+fn add_external_processes(
+    pids: Option<Vec<String>>,
+    containers: Option<Vec<String>>,
+    exec_plan: &mut ExecutionPlan,
+) -> anyhow::Result<()> {
+    // add external processes to observe.
+    for pid in pids.unwrap_or_default() {
+        let pid = pid.parse::<u32>()?;
+        println!("> including external process {}", pid.to_string().green());
+        exec_plan.observe_external_process(ProcessToObserve::ExternalPid(pid));
+    }
+    if let Some(container_names) = containers {
+        exec_plan.observe_external_process(ProcessToObserve::ExternalContainers(container_names));
+    }
+
+    Ok(())
 }
 
 #[tokio::main]
@@ -103,47 +155,23 @@ async fn main() -> anyhow::Result<()> {
             external_only,
         } => {
             println!("\n{}", " Cardamon ".reversed().green());
-
-            // Initialize config if it exists
-            let config = match &args.file {
-                Some(path) => {
-                    println!("> using config {}", path.green());
-                    config::Config::try_from_path(Path::new(path))
-                }
-                None => {
-                    println!("> using config {}", "./cardamon.toml".green());
-                    config::Config::try_from_path(Path::new("./cardamon.toml"))
-                }
-            }
-            .context("Error loading configuration, please run `cardamon init`")?;
+            let config = load_config(&args.file)
+                .context("Error loading configuration, please run `cardamon init`")?;
 
             // create an execution plan
-            let mut execution_plan = if external_only {
-                config.create_execution_plan_external_only(&name)
-            } else {
-                config.create_execution_plan(&name)
-            }?;
+            let mut execution_plan = config.create_execution_plan(&name, external_only)?;
 
             // add external processes to observe.
-            for pid in pids.unwrap_or_default() {
-                let pid = pid.parse::<u32>()?;
-                println!("> including external process {}", pid.to_string().green());
-                execution_plan.observe_external_process(ProcessToObserve::Pid(None, pid));
-            }
-            for container_name in containers.unwrap_or_default() {
-                println!("> including external container {}", container_name.green());
-                execution_plan
-                    .observe_external_process(ProcessToObserve::ContainerName(container_name));
-            }
+            add_external_processes(pids, containers, &mut execution_plan)?;
+
             // Cleanup previous runs stdout and stderr
             cleanup_stdout_stderr()?;
 
             // run it!
-            let observation_dataset =
-                run(execution_plan, config.computer.cpu_avg_power, &db_conn).await?;
+            let observation_dataset = run(execution_plan, config.cpu.avg_power, &db_conn).await?;
 
             println!("\n{}", " Summary ".reversed().green());
-            for scenario_dataset in observation_dataset.by_scenario().iter() {
+            for scenario_dataset in observation_dataset.by_scenario(false).iter() {
                 let run_datasets = scenario_dataset.by_run();
 
                 // execute model for current run
@@ -176,6 +204,27 @@ async fn main() -> anyhow::Result<()> {
                 )
             }
             println!("\n{}", "trend compared to previous 3 runs".bright_black());
+        }
+
+        Commands::Live {
+            name,
+            pids,
+            containers,
+            external_only,
+        } => {
+            println!("\n{}", " Cardamon ".reversed().green());
+
+            // Initialize config if it exists
+            let config = load_config(&args.file)
+                .context("Error loading configuration, please run `cardamon init`")?;
+
+            // create an execution plan
+            let mut execution_plan = config.create_execution_plan(&name, external_only)?;
+
+            add_external_processes(pids, containers, &mut execution_plan)?;
+
+            // Cleanup previous runs stdout and stderr
+            cleanup_stdout_stderr()?;
         }
 
         Commands::Ui { port } => {

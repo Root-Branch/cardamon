@@ -79,13 +79,17 @@ impl<'a> Dataset {
         &self.data
     }
 
-    pub fn by_scenario(&'a self) -> Vec<ScenarioDataset<'a>> {
+    pub fn by_scenario(&'a self, is_live: bool) -> Vec<ScenarioDataset<'a>> {
         // get all the scenarios in the dataset
         let scenario_names = self
             .data
             .iter()
             .map(|x| &x.iteration.scenario_name)
             .unique()
+            .filter(|name| match is_live {
+                true => name.starts_with("live_"),
+                false => true,
+            })
             .collect::<Vec<_>>();
 
         scenario_names
@@ -336,7 +340,7 @@ mod tests {
             .last_n_runs(3)
             .await?;
 
-        let scenario_datasets = dataset.by_scenario();
+        let scenario_datasets = dataset.by_scenario(false);
         assert_eq!(scenario_datasets.len(), 3);
 
         // make sure the scenario names are correct
@@ -418,7 +422,7 @@ mod tests {
             .last_n_runs(3)
             .await?;
 
-        for scenario_dataset in dataset.by_scenario() {
+        for scenario_dataset in dataset.by_scenario(false) {
             let scenario_run_datasets = scenario_dataset.by_run();
 
             match scenario_dataset.scenario_name {
@@ -477,7 +481,7 @@ mod tests {
             .last_n_runs(3)
             .await?;
 
-        for scenario_dataset in dataset.by_scenario() {
+        for scenario_dataset in dataset.by_scenario(false) {
             for scenario_run_dataset in scenario_dataset.by_run() {
                 let scenario_run_iteration_datasets = scenario_run_dataset.by_iteration();
 

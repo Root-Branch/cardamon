@@ -1,5 +1,6 @@
 use crate::entities::metrics;
-use sea_orm::ActiveValue;
+use anyhow::anyhow;
+use sea_orm::*;
 
 #[derive(Debug)]
 pub struct MetricsLog {
@@ -32,6 +33,27 @@ impl MetricsLog {
 
     pub fn has_errors(&self) -> bool {
         !self.err.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.log.clear();
+    }
+
+    pub async fn save(&self, run_id: i32, db: &DatabaseConnection) -> anyhow::Result<()> {
+        // if metrics log contains errors then display them to the user and don't save anything
+        if self.has_errors() {
+            // log all the errors
+            for err in &self.err {
+                tracing::error!("{}", err);
+            }
+            return Err(anyhow!("Metric log contained errors, please see logs."));
+        }
+
+        for metrics in &self.log {
+            metrics.into_active_model(run_id).save(db).await?;
+        }
+
+        Ok(())
     }
 }
 impl Default for MetricsLog {

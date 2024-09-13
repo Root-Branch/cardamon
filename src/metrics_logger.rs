@@ -2,15 +2,14 @@ pub mod bare_metal;
 pub mod docker;
 
 use crate::{metrics::MetricsLog, ProcessToObserve};
-use itertools::Itertools;
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 pub struct StopHandle {
-    token: CancellationToken,
-    join_set: JoinSet<()>,
-    shared_metrics_log: Arc<Mutex<MetricsLog>>,
+    pub token: CancellationToken,
+    pub join_set: JoinSet<()>,
+    pub shared_metrics_log: Arc<Mutex<MetricsLog>>,
 }
 impl StopHandle {
     fn new(
@@ -61,51 +60,65 @@ impl StopHandle {
 ///
 /// A `Result` containing the metrics log for the given scenario or an `Error` if either
 /// the scenario failed to complete successfully or any of the loggers contained errors.
-pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Result<StopHandle> {
+pub fn start_logging<'a>(
+    processes_to_observe: Vec<ProcessToObserve>,
+) -> anyhow::Result<StopHandle> {
     let metrics_log = MetricsLog::new();
     let metrics_log_mutex = Mutex::new(metrics_log);
     let shared_metrics_log = Arc::new(metrics_log_mutex);
 
     // split processes into bare metal & docker processes
-    let (pids, container_names): (Vec<_>, Vec<_>) =
-        processes_to_observe
-            .iter()
-            .partition_map(|proc| match proc {
-                ProcessToObserve::Pid(_, id) => itertools::Either::Left(id),
-                ProcessToObserve::ContainerName(name) => itertools::Either::Right(name.clone()),
-            });
+    let mut a: Vec<ProcessToObserve> = vec![];
+    let mut b: Vec<ProcessToObserve> = vec![];
+    for proc in processes_to_observe {
+        match proc {
+            p @ ProcessToObserve::ExternalPid(_) => a.push(p.clone()),
+            p @ ProcessToObserve::ExternalContainers(_) => b.push(p.clone()),
+
+            p @ ProcessToObserve::ManagedPid {
+                process_name: _,
+                pid: _,
+                down: _,
+            } => a.push(p.clone()),
+            p @ ProcessToObserve::ManagedContainers {
+                process_name: _,
+                container_names: _,
+                down: _,
+            } => b.push(p.clone()),
+        }
+    }
 
     // create a new cancellation token
     let token = CancellationToken::new();
 
     // start threads to collect metrics
     let mut join_set = JoinSet::new();
-    if !pids.is_empty() {
+    if !a.is_empty() {
         let token = token.clone();
         let shared_metrics_log = shared_metrics_log.clone();
         tracing::debug!("Spawning bare metal thread");
         join_set.spawn(async move {
-            tracing::info!("Logging PIDs: {:?}", pids);
+            tracing::info!("Logging PIDs: {:?}", a);
             tokio::select! {
                 _ = token.cancelled() => {}
                 _ = bare_metal::keep_logging(
-                        pids,
+                        a,
                         shared_metrics_log,
                     ) => {}
             }
         });
     }
 
-    if !container_names.is_empty() {
+    if !b.is_empty() {
         let token = token.clone();
         let shared_metrics_log = shared_metrics_log.clone();
 
         join_set.spawn(async move {
-            tracing::info!("Logging containers: {:?}", container_names);
+            tracing::info!("Logging containers: {:?}", b);
             tokio::select! {
                             _ = token.cancelled() => {}
                             _ = docker::keep_logging(
-                                    container_names,
+                                    b,
             shared_metrics_log,
                                  ) => {}
                          }
@@ -136,11 +149,91 @@ pub fn start_logging(processes_to_observe: &[ProcessToObserve]) -> anyhow::Resul
 /// # Returns
 ///
 /// This function does not return, it requires that it's thread is cancelled.
-pub async fn log_live(
-    _processes_to_observe: Vec<ProcessToObserve>,
-    _metrics_log: Arc<Mutex<MetricsLog>>,
-) {
-    // TODO: This should do exactly what log_scenario does but it should save the shared_metrics_log
-    // at regular fixed intervals (either space or time)
-    todo!("implement this!")
+pub async fn log_live(_processes_to_observe: &[&ProcessToObserve]) {
+    // // TODO: This should do exactly what log_scenario does but it should save the shared_metrics_log
+    // // at regular fixed intervals (either space or time)
+    // let metrics_log = MetricsLog::new();
+    // let metrics_log_mutex = Mutex::new(metrics_log);
+    // let shared_metrics_log = Arc::new(metrics_log_mutex);
+    //
+    // // split processes into bare metal & docker processes
+    // let mut pids = vec![];
+    // let mut container_names = vec![];
+    // for proc_to_obs in processes_to_observe {
+    //     match proc_to_obs {
+    //         ProcessToObserve::ExternalPid(pid) => pids.push(*pid),
+    //         ProcessToObserve::ExternalContainers(names) => {
+    //             for name in names {
+    //                 container_names.push(name.clone());
+    //             }
+    //         }
+    //         ProcessToObserve::ManagedPid {
+    //             process_name: _,
+    //             pid,
+    //             down: _,
+    //         } => pids.push(*pid),
+    //         ProcessToObserve::ManagedContainers {
+    //             process_name: _,
+    //             container_names: names,
+    //             down: _,
+    //         } => {
+    //             for name in names {
+    //                 container_names.push(name.clone());
+    //             }
+    //         }
+    //     }
+    // }
+    //
+    // // create a new cancellation token
+    // let token = CancellationToken::new();
+    //
+    // // start threads to collect metrics
+    // let mut join_set = JoinSet::new();
+    // if !pids.is_empty() {
+    //     let token = token.clone();
+    //     let shared_metrics_log = shared_metrics_log.clone();
+    //     tracing::debug!("Spawning bare metal thread");
+    //     join_set.spawn(async move {
+    //         tracing::info!("Logging PIDs: {:?}", pids);
+    //         tokio::select! {
+    //             _ = token.cancelled() => {}
+    //             _ = bare_metal::keep_logging(
+    //                     pids,
+    //                     shared_metrics_log,
+    //                 ) => {}
+    //         }
+    //     });
+    // }
+    //
+    // if !container_names.is_empty() {
+    //     let token = token.clone();
+    //     let shared_metrics_log = shared_metrics_log.clone();
+    //
+    //     join_set.spawn(async move {
+    //         tracing::info!("Logging containers: {:?}", container_names);
+    //         tokio::select! {
+    //                         _ = token.cancelled() => {}
+    //                         _ = docker::keep_logging(
+    //                                 container_names,
+    //         shared_metrics_log,
+    //                              ) => {}
+    //                      }
+    //     });
+    // }
+    //
+    // // start a scheduled job to save the metrics to db
+    // let token = token.clone();
+    // let shared_metrics_log = shared_metrics_log.clone();
+    // join_set.spawn(async move {
+    //     tokio::select! {
+    //         _ = token.cancelled() => {
+    //             // do one last save
+    //             save_metrics_log
+    //         }
+    //
+    //         _ =
+    //     }
+    // })
+    //
+    // Ok(StopHandle::new(token, join_set, shared_metrics_log))todo!("implement this!")
 }

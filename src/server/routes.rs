@@ -42,7 +42,7 @@ pub async fn build_scenario_data(
     db: &DatabaseConnection,
 ) -> anyhow::Result<Vec<ScenarioData>> {
     let mut scenario_data = vec![];
-    for scenario_dataset in dataset.by_scenario() {
+    for scenario_dataset in dataset.by_scenario(false) {
         let data = scenario_dataset
             .apply_model(&db, &models::rab_linear_model(42.0))
             .await?;
