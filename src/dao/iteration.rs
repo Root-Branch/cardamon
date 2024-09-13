@@ -106,6 +106,14 @@ pub async fn fetch_runs_last_n(
     ))
 }
 
+pub async fn fetch_live(run_id: i32, db: &DatabaseConnection) -> anyhow::Result<iteration::Model> {
+    iteration::Entity::find()
+        .filter(iteration::Column::RunId.eq(run_id))
+        .one(db)
+        .await?
+        .context(format!("Unable to find live iteration for run {}", run_id))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{dao, db_connect, db_migrate, tests::setup_fixtures};

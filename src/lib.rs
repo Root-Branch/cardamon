@@ -9,14 +9,14 @@ pub mod models;
 pub mod server;
 
 use crate::{
-    config::Config,
+    config::{Config, ExecutionMode},
     data::{dataset::Dataset, dataset_builder::DatasetBuilder},
     migrations::{Migrator, MigratorTrait},
 };
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use colored::Colorize;
-use config::{ExecutionPlan, ProcessToObserve, ProcessType, Redirect, ScenarioToExecute};
+use config::{ExecutionPlan, Process, ProcessToObserve, ProcessType, Redirect, Scenario};
 use entities::{iteration, run};
 use sea_orm::*;
 use serde_json::Value;
@@ -25,7 +25,8 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
-    sync::mpsc::channel,
+    process::exit,
+    time::Duration,
 };
 use subprocess::{Exec, NullFile, Redirection};
 use sysinfo::{CpuRefreshKind, RefreshKind, System};
@@ -213,6 +214,62 @@ pub async fn db_migrate(db_conn: &DatabaseConnection) -> anyhow::Result<()> {
         .context("Error migrating database.")
 }
 
+fn shutdown_application(running_processes: &Vec<ProcessToObserve>) -> anyhow::Result<()> {
+    // for each process in the execution plan that has a "down" command, attempt to run that
+    // command.
+    for proc in running_processes {
+        match proc {
+            ProcessToObserve::ManagedPid {
+                pid: _,
+                process_name,
+                down: Some(down),
+            } => {
+                print!("> stopping process {}", process_name.green());
+
+                let res = run_command_detached(&down, None);
+                if res.is_err() {
+                    let err = res.unwrap_err();
+                    tracing::warn!(
+                        "Failed to shutdown process with name {}\n{}",
+                        process_name,
+                        err
+                    );
+                    println!();
+                } else {
+                    println!("\t{}", "✓".green());
+                    println!("\t{}", format!("- {}", down).bright_black());
+                }
+            }
+
+            ProcessToObserve::ManagedContainers {
+                process_name,
+                container_names: _,
+                down: Some(down),
+            } => {
+                print!("> stopping process {}", process_name.green());
+
+                let res = run_command_detached(&down, None);
+                if res.is_err() {
+                    let err = res.unwrap_err();
+                    tracing::warn!(
+                        "Failed to shutdown process with name {}\n{}",
+                        process_name,
+                        err
+                    );
+                    println!();
+                } else {
+                    println!("\t{}", "✓".green());
+                    println!("\t{}", format!("- {}", down).bright_black());
+                }
+            }
+
+            _ => {} // do nothing!
+        }
+    }
+
+    Ok(())
+}
+
 /// Deletes previous runs .stdout and .stderr
 /// Stdout and stderr capturing are append due to a scenario / observeration removing previous ones
 /// stdout and err
@@ -239,7 +296,7 @@ pub fn cleanup_stdout_stderr() -> anyhow::Result<()> {
 /// # Returns
 ///
 /// The PID returned by the operating system
-fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::Result<u32> {
+fn run_command_detached(command: &str, redirect: Option<Redirect>) -> anyhow::Result<u32> {
     let redirect = redirect.unwrap_or(Redirect::File);
 
     // break command string into POSIX words
@@ -294,43 +351,54 @@ fn run_command_detached(command: &str, redirect: &Option<Redirect>) -> anyhow::R
 /// # Returns
 ///
 /// A list of all the processes to observe
-fn run_process(proc: &config::ProcessToExecute) -> anyhow::Result<Vec<ProcessToObserve>> {
-    match &proc.process {
-        config::ProcessType::Docker { containers } => {
-            debug!("Running command {} in detached mode ( Docker ) ", proc.up);
-            // run the command
-            run_command_detached(&proc.up, &proc.redirect)?;
-
-            // return the containers as vector of ProcessToObserve
-            Ok(containers
-                .iter()
-                .map(|name| ProcessToObserve::ContainerName(name.clone()))
-                .collect())
-        }
-
-        config::ProcessType::BareMetal => {
+fn run_process(proc_to_exec: &Process) -> anyhow::Result<ProcessToObserve> {
+    match &proc_to_exec.process_type {
+        ProcessType::Docker { containers } => {
             debug!(
-                "Running command {} in detached mode ( Bare metal ) ",
-                proc.up
+                "Running command {} in detached mode ( Docker ) ",
+                proc_to_exec.up
             );
             // run the command
-            let pid = run_command_detached(&proc.up, &proc.redirect)?;
+            run_command_detached(&proc_to_exec.up, proc_to_exec.redirect)?;
+
+            // return the containers as vector of ProcessToObserve
+            Ok(ProcessToObserve::ManagedContainers {
+                process_name: proc_to_exec.name.clone(),
+                container_names: containers.clone(),
+                down: proc_to_exec.down.clone(),
+            })
+        }
+
+        ProcessType::BareMetal => {
+            debug!(
+                "Running command {} in detached mode ( Bare metal ) ",
+                proc_to_exec.up
+            );
+            // run the command
+            let pid = run_command_detached(&proc_to_exec.up, proc_to_exec.redirect)?;
 
             // return the pid as a ProcessToObserve
-            Ok(vec![ProcessToObserve::Pid(Some(proc.name.clone()), pid)])
+            Ok(ProcessToObserve::ManagedPid {
+                process_name: proc_to_exec.name.clone(),
+                pid,
+                down: proc_to_exec
+                    .down
+                    .clone()
+                    .map(|down| down.replace("{pid}", &pid.to_string())),
+            })
         }
     }
 }
 
 async fn run_scenario<'a>(
     run_id: i32,
-    scenario_to_execute: &ScenarioToExecute<'a>,
+    scenario: &Scenario,
     iteration: i32,
 ) -> anyhow::Result<iteration::ActiveModel> {
     let start = Utc::now().timestamp_millis();
 
     // Split the scenario_command into a vector
-    let command_parts = match shlex::split(&scenario_to_execute.scenario.command) {
+    let command_parts = match shlex::split(&scenario.command) {
         Some(command) => command,
         None => vec!["error".to_string()],
     };
@@ -348,14 +416,14 @@ async fn run_scenario<'a>(
         .output()
         .await
         .context(format!("Tokio command failed to run {command}"))?;
-    info!("Ran command {}", scenario_to_execute.scenario.command);
+    info!("Ran command {}", scenario.command);
     if output.status.success() {
         let stop = Utc::now().timestamp_millis();
 
         let scenario_iteration = iteration::ActiveModel {
             id: ActiveValue::NotSet,
             run_id: ActiveValue::Set(run_id),
-            scenario_name: ActiveValue::Set(scenario_to_execute.scenario.name.clone()),
+            scenario_name: ActiveValue::Set(scenario.name.clone()),
             count: ActiveValue::Set(iteration),
             start_time: ActiveValue::Set(start),
             stop_time: ActiveValue::Set(stop),
@@ -366,75 +434,92 @@ async fn run_scenario<'a>(
         Err(anyhow::anyhow!(
             "Scenario execution failed: {}. Command: {}",
             error_message,
-            scenario_to_execute.scenario.command
+            scenario.command
         ))
     }
 }
 
-fn shutdown_application(
-    exec_plan: &ExecutionPlan,
-    running_processes: &[ProcessToObserve],
+/// Run a
+async fn run_scenarios<'a>(
+    run_id: i32,
+    scenarios: Vec<&'a Scenario>,
+    processes_to_observe: Vec<ProcessToObserve>,
+    db: &DatabaseConnection,
 ) -> anyhow::Result<()> {
-    // for each process in the execution plan that has a "down" command, attempt to run that
-    // command.
-    for proc in exec_plan.processes_to_execute.iter() {
-        if let Some(down_command) = &proc.down {
-            match proc.process {
-                ProcessType::BareMetal => {
-                    print!("> stopping process {}", proc.name.green());
+    // ---- for each scenario ----
+    for scenario in scenarios {
+        // for each iteration
+        for iteration in 1..scenario.iterations + 1 {
+            println!(
+                "> running scenario {} - iteration {}/{}",
+                scenario.name.green(),
+                iteration,
+                scenario.iterations
+            );
 
-                    // find the pid associated with this process
-                    let pid = running_processes.iter().find_map(|p| match p {
-                        ProcessToObserve::Pid(Some(name), pid) if name == &proc.name => Some(*pid),
-                        _ => None,
-                    });
+            // start the metrics loggers
+            let stop_handle = metrics_logger::start_logging(processes_to_observe.clone())?;
 
-                    // if pid can't be found then log an error
-                    if let Some(pid) = pid {
-                        // replace {pid} with the actual PID in the down command
-                        let down_command = down_command.replace("{pid}", &pid.to_string());
+            // run the scenario
+            let scenario_iteration = run_scenario(run_id, &scenario, iteration).await?;
+            scenario_iteration.save(db).await?;
 
-                        let res = run_command_detached(&down_command, &proc.redirect);
-                        if res.is_err() {
-                            let err = res.unwrap_err();
-                            tracing::warn!(
-                                "Failed to shutdown process with name {}\n{}",
-                                proc.name,
-                                err
-                            );
-                            println!();
-                        } else {
-                            println!("\t{}", "✓".green());
-                            println!("\t{}", format!("- {}", down_command).bright_black());
-                        }
-                    } else {
-                        tracing::warn!(
-                            "Unable to find PID for bare-metal process with name: {}",
-                            proc.name
-                        );
-                        println!();
-                    }
-                }
-                ProcessType::Docker { containers: _ } => {
-                    let res = run_command_detached(down_command, &proc.redirect);
-                    if res.is_err() {
-                        let err = res.unwrap_err();
-                        tracing::warn!(
-                            "Failed to shutdown process with name {}\n{}",
-                            proc.name,
-                            err
-                        );
-                        println!();
-                    } else {
-                        println!("\t{}", "✓".green());
-                        println!("\t{}", format!("- {}", down_command).bright_black());
-                    }
-                }
-            }
+            // stop the metrics loggers
+            let metrics_log = stop_handle.stop().await?;
+            metrics_log.save(run_id, db).await?;
         }
     }
 
     Ok(())
+}
+
+// async fn keep_saving(
+//     run_id: i32,
+//     shared_metrics_log: Arc<Mutex<MetricsLog>>,
+//     db: &DatabaseConnection,
+// ) -> anyhow::Result<()> {
+//     loop {}
+// }
+
+pub async fn run_live<'a>(
+    run_id: i32,
+    processes_to_observe: Vec<ProcessToObserve>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    // create a single iteration
+    let start = Utc::now().timestamp_millis();
+    let iteration = iteration::ActiveModel {
+        id: ActiveValue::NotSet,
+        run_id: ActiveValue::Set(run_id),
+        scenario_name: ActiveValue::Set("live".to_string()),
+        count: ActiveValue::Set(1),
+        start_time: ActiveValue::Set(start),
+        stop_time: ActiveValue::Set(start), // same as start for now, will be updated later
+    };
+    iteration.save(db).await?;
+
+    // start the metrics logger
+    let stop_handle = metrics_logger::start_logging(processes_to_observe.clone())?;
+
+    // keep saving!
+    let shared_metrics_log = stop_handle.shared_metrics_log.clone();
+    loop {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let shared_metrics_log = shared_metrics_log.clone();
+        let mut metrics_log = shared_metrics_log.lock().unwrap();
+
+        metrics_log.save(run_id, &db).await?;
+        metrics_log.clear();
+
+        // update the iteration stop time
+        let now = Utc::now().timestamp_millis();
+        let mut active_iteration = dao::iteration::fetch_live(run_id, &db)
+            .await?
+            .into_active_model();
+        active_iteration.stop_time = ActiveValue::Set(now);
+        active_iteration.update(db).await?;
+    }
 }
 
 pub async fn run<'a>(
@@ -442,105 +527,70 @@ pub async fn run<'a>(
     cpu_avg_power: f32,
     db: &DatabaseConnection,
 ) -> anyhow::Result<Dataset> {
-    let mut run_id: i32 = 0;
-
-    let mut processes_to_observe = exec_plan.external_processes_to_observe.to_vec(); // external procs to observe are cloned here.
+    let mut processes_to_observe = exec_plan.external_processes_to_observe.unwrap_or(vec![]); // external procs to observe are cloned here.
 
     // run the application if there is anything to run
     if !exec_plan.processes_to_execute.is_empty() {
-        for proc in exec_plan.processes_to_execute.iter() {
+        for proc in exec_plan.processes_to_execute {
             print!("> starting process {}", proc.name.green());
+
             let process_to_observe = run_process(proc)?;
-            processes_to_observe.extend(process_to_observe);
+
+            // add process_to_observe to the observation list
+            processes_to_observe.push(process_to_observe);
             println!("{}", "\t✓".green());
             println!("\t{}", format!("- {}", proc.up).bright_black());
         }
     }
 
-    // set ctrlc handler
-    let (tx, rx) = channel();
-    ctrlc::set_handler(move || {
-        tx.send(())
-            .expect("Could not send ctrl-c signal for graceful shutdown")
-    })
-    .expect("");
+    let start_time = Utc::now().timestamp_millis();
+    let is_live = match exec_plan.execution_mode {
+        ExecutionMode::Live => true,
+        _ => false,
+    };
 
-    // ---- for each scenario ----
-    for scenario_to_execute in exec_plan.scenarios_to_execute.iter() {
-        let start_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
-                                                        // timezones
-
-        // create a new run
-        let mut active_run = run::ActiveModel {
-            id: sea_orm::ActiveValue::NotSet,
-            cpu_avg_power: sea_orm::ActiveValue::Set(cpu_avg_power),
-            start_time: sea_orm::ActiveValue::Set(start_time),
-            stop_time: sea_orm::ActiveValue::set(None),
-        }
-        .save(db)
-        .await?;
-
-        // get the new run id
-        run_id = active_run.clone().try_into_model()?.id;
-
-        // for each iteration
-        for iteration in 1..scenario_to_execute.scenario.iterations + 1 {
-            println!(
-                "> running scenario {} - iteration {}/{}",
-                scenario_to_execute.scenario.name.green(),
-                iteration,
-                scenario_to_execute.scenario.iterations
-            );
-
-            // start the metrics loggers
-            let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
-
-            // run the scenario
-            let scenario_iteration = run_scenario(run_id, scenario_to_execute, iteration).await?;
-
-            // stop the metrics loggers
-            let metrics_log = stop_handle.stop().await?;
-
-            // if metrics log contains errors then display them to the user and don't save anything
-            if metrics_log.has_errors() {
-                // log all the errors
-                for err in metrics_log.get_errors() {
-                    tracing::error!("{}", err);
-                }
-                return Err(anyhow!("Metric log contained errors, please see logs."));
-            }
-            //
-            // save the scenario iteration
-            scenario_iteration.save(db).await?;
-
-            for metrics in metrics_log.get_metrics() {
-                metrics.into_active_model(run_id).save(db).await?;
-            }
-        }
-
-        // write scenario and metrics to db
-        // write run table first due to foreign key constraints
-        //let stop_time = time::SystemTime::now().duration_since(time::UNIX_EPOCH).
-        let stop_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
-                                                       // timezones
-
-        // update run with the stop time
-        active_run.stop_time = ActiveValue::Set(Some(stop_time));
-        active_run.save(db).await?;
-
-        match rx.try_recv() {
-            Ok(_) => {
-                shutdown_application(&exec_plan, &processes_to_observe).expect(
-                    "Error gracefully shutting down application. Please cleanup processes manually.",
-                );
-                break;
-            }
-            Err(_) => continue,
-        }
+    // create a new run
+    let mut active_run = run::ActiveModel {
+        id: sea_orm::ActiveValue::NotSet,
+        is_live: sea_orm::ActiveValue::Set(is_live),
+        cpu_avg_power: sea_orm::ActiveValue::Set(cpu_avg_power),
+        start_time: sea_orm::ActiveValue::Set(start_time),
+        stop_time: sea_orm::ActiveValue::set(None),
     }
+    .save(db)
+    .await?;
+
+    // get the new run id
+    let run_id = active_run.clone().try_into_model()?.id;
+
+    // gracefully shutdown upon ctrl-c
+    let processes_to_shutdown = processes_to_observe.clone();
+    ctrlc::set_handler(move || {
+        println!();
+        shutdown_application(&processes_to_shutdown)
+            .expect("Error shutting down managed processes");
+        exit(0)
+    })?;
+
+    match exec_plan.execution_mode {
+        ExecutionMode::Observation(scenarios) => {
+            run_scenarios(run_id, scenarios, processes_to_observe.clone(), db).await?;
+        }
+
+        config::ExecutionMode::Live => {
+            run_live(run_id, processes_to_observe.clone(), db).await?;
+        }
+    };
+
+    let stop_time = Utc::now().timestamp_millis(); // Use UTC to avoid confusion, UI can handle
+                                                   // timezones
+
+    // update run with the stop time
+    active_run.stop_time = ActiveValue::Set(Some(stop_time));
+    active_run.save(db).await?;
 
     // stop the application
-    shutdown_application(&exec_plan, &processes_to_observe)?;
+    shutdown_application(&processes_to_observe)?;
 
     // create a dataset containing the data just collected
     DatasetBuilder::new(db)
@@ -554,7 +604,7 @@ pub async fn run<'a>(
 pub mod tests {
     use super::*;
     use crate::{
-        config::{ProcessToExecute, ProcessType},
+        config::{Process, ProcessType},
         fetch_tdp, metrics_logger, run_process, ProcessToObserve,
     };
     use std::time::Duration;
@@ -597,22 +647,24 @@ pub mod tests {
 
         #[test]
         fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
-            let process = ProcessToExecute {
+            let proc = Process {
                 name: "sleep".to_string(),
                 up: "powershell sleep 15".to_string(),
                 down: None,
                 redirect: None,
-                process: ProcessType::BareMetal,
+                process_type: ProcessType::BareMetal,
             };
-            let processes_to_observe = run_process(&process)?;
+            let proc_to_observe = run_process(&proc)?;
 
-            assert_eq!(processes_to_observe.len(), 1);
-
-            match processes_to_observe.first().expect("process should exist") {
-                ProcessToObserve::Pid(_, pid) => {
+            match proc_to_observe {
+                ProcessToObserve::ManagedPid {
+                    process_name: _,
+                    pid,
+                    down: _,
+                } => {
                     let mut system = System::new();
                     system.refresh_all();
-                    let proc = system.process(Pid::from_u32(*pid));
+                    let proc = system.process(Pid::from_u32(pid));
                     assert!(proc.is_some());
                 }
 
@@ -624,15 +676,15 @@ pub mod tests {
 
         #[tokio::test]
         async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
-            let process = ProcessToExecute {
+            let proc = Process {
                 name: "sleep".to_string(),
                 up: "powershell sleep 20".to_string(),
                 down: None,
                 redirect: None,
-                process: ProcessType::BareMetal,
+                process_type: ProcessType::BareMetal,
             };
-            let processes_to_observe = run_process(&process)?;
-            let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
+            let proc_to_observe = run_process(&proc)?;
+            let stop_handle = metrics_logger::start_logging(&[&proc_to_observe])?;
 
             tokio::time::sleep(Duration::from_secs(10)).await;
 
@@ -654,27 +706,29 @@ pub mod tests {
 
         #[test]
         fn can_run_a_bare_metal_process() -> anyhow::Result<()> {
-            let process = ProcessToExecute {
+            let proc = Process {
                 name: "sleep".to_string(),
                 up: "sleep 15".to_string(),
                 down: None,
                 redirect: Some(Redirect::Null),
-                process: ProcessType::BareMetal,
+                process_type: ProcessType::BareMetal,
             };
-            let processes_to_observe = run_process(&process)?;
+            let proc_to_observe = run_process(&proc)?;
 
-            assert_eq!(processes_to_observe.len(), 1);
-
-            match processes_to_observe.first().expect("process should exist") {
-                ProcessToObserve::Pid(name, pid) => {
+            match proc_to_observe {
+                ProcessToObserve::ManagedPid {
+                    process_name,
+                    pid,
+                    down: _,
+                } => {
                     let mut system = System::new();
                     system.refresh_all();
-                    let proc = system.process(Pid::from_u32(*pid));
+                    let proc = system.process(Pid::from_u32(pid));
                     let proc_name = proc.unwrap().name().to_os_string();
                     let proc_name = proc_name.to_string_lossy();
                     let proc_name = proc_name.deref().to_string();
                     assert!(proc.is_some());
-                    assert!(proc_name == name.clone().unwrap());
+                    assert!(proc_name == process_name);
                 }
 
                 e => panic!("expected to find a process id {:?}", e),
@@ -685,15 +739,15 @@ pub mod tests {
 
         #[tokio::test]
         async fn log_scenario_should_return_metrics_log_without_errors() -> anyhow::Result<()> {
-            let process = ProcessToExecute {
+            let proc = Process {
                 name: "sleep".to_string(),
                 up: "sleep 20".to_string(),
                 down: None,
                 redirect: Some(Redirect::Null),
-                process: ProcessType::BareMetal,
+                process_type: ProcessType::BareMetal,
             };
-            let processes_to_observe = run_process(&process)?;
-            let stop_handle = metrics_logger::start_logging(&processes_to_observe)?;
+            let procs_to_observe = run_process(&proc)?;
+            let stop_handle = metrics_logger::start_logging(vec![procs_to_observe])?;
 
             tokio::time::sleep(Duration::from_secs(10)).await;
 

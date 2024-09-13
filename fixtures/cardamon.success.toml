@@ -1,27 +1,25 @@
-metrics_server_url = "http://cardamon.rootandbranch.io"
+[cpu]
+name = "AMD Ryzen 7 Pro 6850U with radeon"
+avg_power = 11.223
 
-[computer]
-cpu_name = "AMD Ryzen 7 Pro 6850U with radeon"
-cpu_avg_power = 11.223
-
-[[processes]]
+[[process]]
 name = "db"
 up = "powershell sleep 5"         # "docker compose up -d"
 process.type = "docker"
 process.containers = ["postgres"]
 
-[[processes]]
+[[process]]
 name = "server"
 up = "powershell sleep 5"  # "yarn dev"
 process.type = "baremetal"
 
-[[scenarios]]
+[[scenario]]
 name = "basket_10"
 desc = "Adds ten items to the basket"
 command = "node ./scenarios/basket_10.js"
 iterations = 1
 processes = ["db", "server"]
 
-[[observations]]
+[[observation]]
 name = "checkout"
 scenarios = ["basket_10"]

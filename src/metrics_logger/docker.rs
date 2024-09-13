@@ -1,3 +1,4 @@
+use crate::config::ProcessToObserve;
 use crate::metrics::{CpuMetrics, MetricsLog};
 use bollard::container::{ListContainersOptions, Stats, StatsOptions};
 use bollard::Docker;
@@ -25,7 +26,10 @@ use tracing::{debug, error, warn};
 /// # Returns
 ///
 /// This function does not return, it requires that its thread is cancelled.
-pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<MetricsLog>>) {
+pub async fn keep_logging(
+    procs_to_observe: Vec<ProcessToObserve>,
+    metrics_log: Arc<Mutex<MetricsLog>>,
+) {
     // This connects with system defaults, socket for unix, http for windows
     let docker = match Docker::connect_with_defaults() {
         Ok(docker) => {
@@ -37,6 +41,25 @@ pub async fn keep_logging(container_names: Vec<String>, metrics_log: Arc<Mutex<M
             return;
         }
     };
+
+    let mut container_names = vec![];
+    for proc_to_observe in procs_to_observe.into_iter() {
+        match proc_to_observe {
+            ProcessToObserve::ManagedContainers {
+                process_name: _,
+                container_names: names,
+                down: _,
+            } => {
+                container_names.append(&mut names.clone());
+            }
+
+            ProcessToObserve::ExternalContainers(names) => {
+                container_names.append(&mut names.clone())
+            }
+
+            _ => panic!("wat!"),
+        }
+    }
 
     loop {
         // Only running containers, we re-try in a second if the container is not running yet
@@ -211,6 +234,7 @@ pub async fn get_container_status(container_name: &str) -> anyhow::Result<String
 #[cfg(test)]
 mod tests {
     use crate::{
+        config::ProcessToObserve,
         metrics::{CpuMetrics, MetricsLog},
         metrics_logger::{
             docker::{get_container_status, keep_logging},
@@ -413,12 +437,18 @@ CMD ["sleep", "infinity"]
         let task_metrics_log = shared_metrics_log.clone();
         let task_container_name = container_name.clone();
 
+        let proc_to_observe = ProcessToObserve::ManagedContainers {
+            process_name: "".to_string(),
+            container_names: vec![task_container_name],
+            down: Some("".to_string()),
+        };
+
         // Spawn task ( async )
         join_set.spawn(async move {
             println!("starting to record metrics");
             tokio::select! {
                 _ = task_token.cancelled() => {}
-                _ = keep_logging(vec![task_container_name], task_metrics_log)=> {}
+                _ = keep_logging(vec![proc_to_observe], task_metrics_log)=> {}
             }
         });
 
