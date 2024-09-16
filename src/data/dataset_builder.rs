@@ -1,46 +1,35 @@
 use crate::{
-    dao::{self, pagination::Page},
+    dao::{
+        self,
+        pagination::{Page, Pages},
+    },
     data::dataset::{Dataset, IterationMetrics},
 };
+use anyhow::Context;
 use sea_orm::DatabaseConnection;
 
+#[derive(Debug)]
 pub enum ScenarioSelection {
     All,
+    One(String),
     InRun(String),
     InRange { from: i64, to: i64 },
     Search(String),
 }
 
+#[derive(Debug)]
 pub enum RunSelection {
     All,
     InRange { from: i64, to: i64 },
+    LastN(u64),
 }
 
 /// # DatasetBuilder
 ///
-/// The DatasetBuilder allows you to construct a Dataset. There are 2 paths you can follow to build
-/// a Dataset which are useful in different uses within Cardamon. These paths exist to stop you from
-/// creating an inconsistent Dataset. The sections that follow provide an explaination of each path:
+/// DatasetBuilder => DatasetRowPager => DatasetRows => DatasetColPager => DatasetBuilderFinal => Dataset
 ///
-///```text
-/// [Figure 1 - DatasetBuilder flow]
-///
-///                         [Single scenario, page runs]
-///
-///                     ----- DatasetRow ----- DatasetColPager --
-///                    |                                         |
-/// DatasetBuilder --- +                                         + --- Dataset
-///                    |                                         |
-///                     -- DatasetRowPager ----- DatasetRows ----
-///
-///                      [Multiple scenarios, summaries results]
-///```
-///
-/// ## 1 - Single scenario, pagination over runs
-///
-/// The first creates a Dataset focused on a single scenario and includes some subset of it's most
-/// recent runs. This supports the use-case where a user has clicked a single scenario in the UI
-/// and wants to view all the times that scenario has been run.
+/// The DatasetBuilder allows you to construct a Dataset. There is one case that is not allowed. If you have multiple
+/// scenarios (rows) you cannot `page` over runs (columns).
 ///
 /// Example: scenario_runs_by_page("add_10_items", 3, 2)
 ///  ================================================================================
@@ -51,12 +40,6 @@ pub enum RunSelection {
 /// ||              ||        |        |        | ********************************* ||
 ///  ================================================================================
 ///
-/// ## 2 - Multiple scenarios, 'n' most recent runs_all
-///
-/// The second creates a Dataset containining some subset of scenarios and the last 'n' times they
-/// were run. This is useful when building a summary of a set of scenarios, for example when a user
-/// runs cardamon from the CLI.
-///
 /// Example: last 3 runs of [add_10_items, add_10_users, checkout]
 ///  ============================================
 /// ||  scenarios   || run_1  | run_2  | run_3  ||
@@ -66,43 +49,17 @@ pub enum RunSelection {
 /// || checkout     || <data> |        | <data> ||
 ///  ============================================
 ///
-///
-/// # Example uses
-///
-/// Example: fetch 3rd page (page size = 5) in runs for add_10_items scenario
-///
-///```ignore
-/// DatasetBuilder::new(&dao_service)
-///     .scenario("add_10_items")
-///     .runs_all()
-///     .page(3, 5)
-///     .await?
-///```
-///
-/// Example: fetch the 2nd page of scenarios that match "items" and summarise the last 5 runs
-///
-/// ```ignore
-/// DatasetBuilder::new(&dao_service)
-///     .scenarios_by_name("items")
-///     .page(2, 5)
-///     .last_n_runs(5)
-///     .await?
-///```
-///
 
-pub struct DatasetBuilder<'a> {
-    db: &'a DatabaseConnection,
-}
-impl<'a> DatasetBuilder<'a> {
-    pub fn new(db: &'a DatabaseConnection) -> Self {
-        DatasetBuilder { db }
+pub struct DatasetBuilder;
+impl DatasetBuilder {
+    pub fn new() -> Self {
+        DatasetBuilder
     }
 
     /// Returns a single scenario.
-    pub fn scenario(&self, scenario: &str) -> DatasetRow {
-        DatasetRow {
-            scenario: scenario.to_string(),
-            db: self.db,
+    pub fn scenario(&self, scenario: &str) -> DatasetRowPager {
+        DatasetRowPager {
+            scenario_selection: ScenarioSelection::One(scenario.to_string()),
         }
     }
 
@@ -110,7 +67,6 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_all(&self) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::All,
-            db: self.db,
         }
     }
 
@@ -118,7 +74,6 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_in_run(&self, run: i32) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::InRun(run.to_string()),
-            db: self.db,
         }
     }
 
@@ -130,7 +85,6 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_in_range(&self, from: i64, to: i64) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::InRange { from, to },
-            db: self.db,
         }
     }
 
@@ -140,7 +94,6 @@ impl<'a> DatasetBuilder<'a> {
     pub fn scenarios_by_name(&self, name: &str) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::Search(name.to_string()),
-            db: self.db,
         }
     }
 }
@@ -149,24 +102,22 @@ impl<'a> DatasetBuilder<'a> {
 /// without any runs.
 ///
 /// It provides functions to select a subset within that range of scenarios.
-pub struct DatasetRowPager<'a> {
+pub struct DatasetRowPager {
     scenario_selection: ScenarioSelection,
-    db: &'a DatabaseConnection,
 }
-impl<'a> DatasetRowPager<'a> {
+impl DatasetRowPager {
     /// Returns a DatasetRows object which defined the full set of scenarios defined by this
     /// DatasetRowPager.
-    pub fn all(self) -> DatasetRows<'a> {
+    pub fn all(self) -> DatasetRows {
         DatasetRows {
             scenario_selection: self.scenario_selection,
             scenario_page: None,
-            db: self.db,
         }
     }
 
     /// Returns a DatasetRows object which defines a subset of the scenarios defined by this
     /// DatasetRowPager.
-    pub fn page(self, page_size: u64, page_num: u64) -> DatasetRows<'a> {
+    pub fn page(self, page_size: u64, page_num: u64) -> DatasetRows {
         let scenario_page = Page {
             size: page_size,
             num: page_num,
@@ -175,7 +126,6 @@ impl<'a> DatasetRowPager<'a> {
         DatasetRows {
             scenario_selection: self.scenario_selection,
             scenario_page: Some(scenario_page),
-            db: self.db,
         }
     }
 }
@@ -197,66 +147,17 @@ impl<'a> DatasetRowPager<'a> {
 /// || **************** ||          ||
 ///  ================================
 ///
-pub struct DatasetRows<'a> {
+pub struct DatasetRows {
     scenario_selection: ScenarioSelection,
     scenario_page: Option<Page>,
-    db: &'a DatabaseConnection,
 }
-impl<'a> DatasetRows<'a> {
-    /// Returns a Dataset which contains the iterations and metrics collected in the last 'n' runs
-    /// of each scenario.
-    ///
-    /// This function is async as it uses the dao_service to fetch the results from the db.
-    pub async fn last_n_runs(&self, n: u64) -> anyhow::Result<Dataset> {
-        let (scenarios, total_scenarios) = match &self.scenario_selection {
-            ScenarioSelection::All => dao::scenario::fetch_all(&self.scenario_page, self.db).await,
-            ScenarioSelection::Search(name) => {
-                dao::scenario::fetch_by_name(name, &self.scenario_page, self.db).await
-            }
-            ScenarioSelection::InRun(run) => {
-                dao::scenario::fetch_in_run(run, &self.scenario_page, self.db).await
-            }
-            ScenarioSelection::InRange { from, to } => {
-                dao::scenario::fetch_in_range(*from, *to, &self.scenario_page, self.db).await
-            }
-        }?;
-
-        // for each scenario get the associated iterations in the last n runs
-        let mut iterations = vec![];
-        for scenario in scenarios {
-            let mut scenario_iterations =
-                dao::iteration::fetch_runs_last_n(&scenario.scenario_name, n, self.db).await?;
-            iterations.append(&mut scenario_iterations);
-        }
-
-        // marry up iterations with metrics
-        // TODO: read from cache table first
-        let mut iterations_with_metrics = vec![];
-        for it in iterations {
-            let metrics =
-                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, self.db).await?;
-            iterations_with_metrics.push(IterationMetrics::new(it, metrics));
-        }
-
-        // TODO: cache the iterations/metrics data
-
-        Ok(Dataset::new(iterations_with_metrics, total_scenarios))
-    }
-}
-
-/// The DatasetRow defines an incomplete Dataset with a single scenario (row) without any runs.
-/// This object provides functions for defining a range of runs to include for the scenario.
-pub struct DatasetRow<'a> {
-    scenario: String,
-    db: &'a DatabaseConnection,
-}
-impl<'a> DatasetRow<'a> {
+impl DatasetRows {
     /// Return a DataColPager which includes all the runs for this scenario.
-    pub fn runs_all(self) -> DatasetColPager<'a> {
+    pub fn runs_all(self) -> DatasetColPager {
         DatasetColPager {
-            scenario: self.scenario,
+            scenario_selection: self.scenario_selection,
+            scenario_page: self.scenario_page,
             run_selection: RunSelection::All,
-            db: self.db,
         }
     }
 
@@ -266,11 +167,23 @@ impl<'a> DatasetRow<'a> {
     /// * Arguments
     /// - from: unix timestamp in millis
     /// - to: unix timestamp in millis
-    pub fn runs_in_range(self, from: i64, to: i64) -> DatasetColPager<'a> {
+    pub fn runs_in_range(self, from: i64, to: i64) -> DatasetColPager {
         DatasetColPager {
-            scenario: self.scenario,
+            scenario_selection: self.scenario_selection,
+            scenario_page: self.scenario_page,
             run_selection: RunSelection::InRange { from, to },
-            db: self.db,
+        }
+    }
+
+    /// Returns a DatasetColPager which includes only the last `n` runs of the given scenario.
+    ///
+    /// * Arguments
+    /// - n: number of runs to include.
+    pub fn last_n_runs(self, n: u64) -> DatasetColPager {
+        DatasetColPager {
+            scenario_selection: self.scenario_selection,
+            scenario_page: self.scenario_page,
+            run_selection: RunSelection::LastN(n),
         }
     }
 }
@@ -279,23 +192,93 @@ impl<'a> DatasetRow<'a> {
 /// range of runs for that scenario.
 ///
 /// It provides a single function to select a single page within that range of runs.
-pub struct DatasetColPager<'a> {
-    scenario: String,
+#[derive(Debug)]
+pub struct DatasetColPager {
+    scenario_selection: ScenarioSelection,
+    scenario_page: Option<Page>,
     run_selection: RunSelection,
-    db: &'a DatabaseConnection,
 }
-impl<'a> DatasetColPager<'a> {
-    pub async fn page(&self, page_size: u64, page_num: u64) -> anyhow::Result<Dataset> {
-        let page = Page::new(page_size, page_num);
+impl DatasetColPager {
+    pub fn all(self) -> DatasetBuilderFinal {
+        DatasetBuilderFinal {
+            scenario_selection: self.scenario_selection,
+            scenario_page: self.scenario_page,
+            run_selection: self.run_selection,
+            run_page: None,
+        }
+    }
 
-        let (iterations, _total_runs) = match self.run_selection {
-            RunSelection::All => {
-                dao::iteration::fetch_runs_all(&self.scenario, &Some(page), self.db).await
+    pub fn page(self, page_size: u64, page_num: u64) -> anyhow::Result<DatasetBuilderFinal> {
+        match self.scenario_selection {
+            ScenarioSelection::One(_) => Ok(DatasetBuilderFinal {
+                scenario_selection: self.scenario_selection,
+                scenario_page: self.scenario_page,
+                run_selection: self.run_selection,
+                run_page: Some(Page {
+                    size: page_size,
+                    num: page_num,
+                }),
+            }),
+
+            _ => Err(anyhow::anyhow!(
+                "Unable to paginate over runs if multiple scenarios are selected."
+            )),
+        }
+    }
+}
+
+pub struct DatasetBuilderFinal {
+    scenario_selection: ScenarioSelection,
+    scenario_page: Option<Page>,
+    run_selection: RunSelection,
+    run_page: Option<Page>,
+}
+impl DatasetBuilderFinal {
+    async fn fetch_scenarios(
+        &self,
+        db: &DatabaseConnection,
+    ) -> anyhow::Result<(Vec<String>, Pages)> {
+        let (scenario_names, scenario_pages) = match &self.scenario_selection {
+            ScenarioSelection::All => dao::scenario::fetch_all(&self.scenario_page, db).await,
+            ScenarioSelection::One(name) => {
+                let scenario_name = dao::scenario::fetch(&name, db)
+                    .await?
+                    .context(format!("Error finding scenario with name {}", name))?;
+
+                Ok((vec![scenario_name], Pages::NotRequired)) // if you only have one scenario then
+                                                              // pages are not required!
             }
+            ScenarioSelection::Search(name) => {
+                dao::scenario::fetch_by_query(&name, &self.scenario_page, db).await
+            }
+            ScenarioSelection::InRun(run) => {
+                dao::scenario::fetch_in_run(&run, &self.scenario_page, db).await
+            }
+            ScenarioSelection::InRange { from, to } => {
+                dao::scenario::fetch_in_range(*from, *to, &self.scenario_page, db).await
+            }
+        }?;
+
+        let scenario_names = scenario_names
+            .iter()
+            .map(|s| s.scenario_name.clone())
+            .collect::<Vec<_>>();
+
+        Ok((scenario_names, scenario_pages))
+    }
+
+    async fn all(&self, db: &DatabaseConnection) -> anyhow::Result<Dataset> {
+        let (scenarios, total_scenarios) = self.fetch_scenarios(db).await?;
+
+        let (iterations, total_runs) = match self.run_selection {
+            RunSelection::All => dao::iteration::fetch_runs_all(&scenarios, None, db).await,
 
             RunSelection::InRange { from, to } => {
-                dao::iteration::fetch_runs_in_range(&self.scenario, from, to, &Some(page), self.db)
-                    .await
+                dao::iteration::fetch_runs_in_range(&scenarios, from, to, None, db).await
+            }
+
+            RunSelection::LastN(n) => {
+                dao::iteration::fetch_runs_last_n(&scenarios, n, None, db).await
             }
         }?;
 
@@ -304,13 +287,59 @@ impl<'a> DatasetColPager<'a> {
         let mut iterations_with_metrics = vec![];
         for it in iterations {
             let metrics =
-                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, self.db).await?;
+                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, db).await?;
             iterations_with_metrics.push(IterationMetrics::new(it, metrics));
         }
 
         // TODO: cache the iterations/metrics data
         //
 
-        Ok(Dataset::new(iterations_with_metrics, 1))
+        Ok(Dataset::new(
+            iterations_with_metrics,
+            total_scenarios,
+            total_runs,
+        ))
+    }
+
+    async fn page(&self, page: &Page, db: &DatabaseConnection) -> anyhow::Result<Dataset> {
+        let page = Page::new(page.size, page.num);
+        let (scenarios, total_scenarios) = self.fetch_scenarios(db).await?;
+
+        let (iterations, total_runs) = match self.run_selection {
+            RunSelection::All => dao::iteration::fetch_runs_all(&scenarios, Some(page), db).await,
+
+            RunSelection::InRange { from, to } => {
+                dao::iteration::fetch_runs_in_range(&scenarios, from, to, Some(page), db).await
+            }
+
+            RunSelection::LastN(n) => {
+                dao::iteration::fetch_runs_last_n(&scenarios, n, Some(page), db).await
+            }
+        }?;
+
+        // marry up iterations with metrics
+        // TODO: read from cache table first
+        let mut iterations_with_metrics = vec![];
+        for it in iterations {
+            let metrics =
+                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, db).await?;
+            iterations_with_metrics.push(IterationMetrics::new(it, metrics));
+        }
+
+        // TODO: cache the iterations/metrics data
+        //
+
+        Ok(Dataset::new(
+            iterations_with_metrics,
+            total_scenarios,
+            total_runs,
+        ))
+    }
+
+    pub async fn build(&self, db: &DatabaseConnection) -> anyhow::Result<Dataset> {
+        match &self.run_page {
+            Some(page) => self.page(page, db).await,
+            None => self.all(db).await,
+        }
     }
 }

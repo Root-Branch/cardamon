@@ -3,8 +3,8 @@ name = "cardamon"
 version = "0.0.7"
 edition = "2021"
 authors = [
-  "Oliver Winks <oliver@paperplane.software>",
-  "William Kimbell <will@kimbell.uk>",
+    "Oliver Winks <oliver@paperplane.software>",
+    "William Kimbell <will@kimbell.uk>",
 ]
 description = "Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software."
 license-file = "LICENSE"
@@ -13,19 +13,19 @@ documentation = "https://docs.rs/cardamon"
 homepage = "https://github.com/Root-Branch/cardamon"
 keywords = ["green-software", "environmental", "sustainability"]
 categories = [
-  "command-line-utilities",
-  "development-tools",
-  "development-tools::profiling",
+    "command-line-utilities",
+    "development-tools",
+    "development-tools::profiling",
 ]
 readme = "README.md"
 include = ["src/**/*.rs", "src/public", "src/templates"]
-default-run = "main"
+default-run = "cardamon"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 pkg-fmt = "zip"
 
 [[bin]]
-name = "main"
+name = "cardamon"
 path = "src/main.rs"
 
 [[bin]]
@@ -47,48 +47,46 @@ futures-util = "0.3.30"
 http = "1.1.0"
 itertools = "0.13.0"
 mime_guess = { version = "2.0.5" }
-nanoid = "0.4.0"
 num_cpus = "1.16.0"
 reqwest = { version = "0.12.7", features = ["json"] }
 rust-embed = "8.5.0"
 sea-orm = { version = "1.0.0", features = [
-  "sqlx-sqlite",
-  "sqlx-postgres",
-  "sqlx-mysql",
-  "runtime-tokio-rustls",
-  "macros",
-  "tests-cfg",
+    "sqlx-sqlite",
+    "sqlx-postgres",
+    "sqlx-mysql",
+    "runtime-tokio-rustls",
+    "macros",
+    "tests-cfg",
 ] }
 sea-orm-macros = { version = "1.0.0" }
-# sea-orm-migration = { version = "1.0.0", features = [
-#   "sqlx-sqlite",
-#   "sqlx-postgres",
-#   "sqlx-mysql",
-#   "runtime-tokio-rustls",
-# ] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.117"
 shlex = "1.3.0"
 subprocess = "0.2.9"
 sysinfo = "0.31.2"
 tar = "0.4.41"
-time = "0.3.36"
+term-table = "1.4.0"
+# textplots = "0.8.6"
+# time = "0.3.36"
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-util = "0.7.11"
 toml = "0.8.12"
 tower-http = { version = "0.5.2", features = ["cors"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = [
-  "registry",
-  "env-filter",
+    "registry",
+    "env-filter",
 ] }
 
 [dependencies.sea-orm-migration]
 version = "1.0.0" # sea-orm-migration version
 features = [
-  # Enable following runtime and db backend features if you want to run migration via CLI
-  "runtime-tokio-rustls",
-  "sqlx-postgres",
-  "sqlx-sqlite",
-  "sqlx-mysql",
+    # Enable following runtime and db backend features if you want to run migration via CLI
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+    "sqlx-sqlite",
+    "sqlx-mysql",
 ]
+
+[dev-dependencies]
+nanoid = "0.4.0"

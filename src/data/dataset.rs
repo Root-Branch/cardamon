@@ -1,5 +1,5 @@
 use crate::{
-    dao,
+    dao::{self, pagination::Pages},
     data::Data,
     entities::{iteration::Model as Iteration, metrics::Model as Metrics},
 };
@@ -63,20 +63,27 @@ impl IterationMetrics {
 /// ||              ||        |        |        | ********************************* ||
 ///  ================================================================================
 ///
+#[derive(Debug)]
 pub struct Dataset {
     data: Vec<IterationMetrics>,
-    pub total_scenarios: u64,
+    pub total_scenarios: Pages,
+    pub total_runs: Pages,
 }
 impl<'a> Dataset {
-    pub fn new(data: Vec<IterationMetrics>, total_scenarios: u64) -> Self {
+    pub fn new(data: Vec<IterationMetrics>, total_scenarios: Pages, total_runs: Pages) -> Self {
         Self {
             data,
             total_scenarios,
+            total_runs,
         }
     }
 
     pub fn data(&'a self) -> &'a [IterationMetrics] {
         &self.data
+    }
+
+    pub fn is_empty(&'a self) -> bool {
+        self.data.is_empty()
     }
 
     pub fn by_scenario(&'a self, is_live: bool) -> Vec<ScenarioDataset<'a>> {
@@ -133,7 +140,6 @@ impl<'a> ScenarioDataset<'a> {
             .data
             .iter()
             // TODO: Check that this is ascending order
-            .sorted_by(|a, b| b.iteration.count.cmp(&a.iteration.count))
             .map(|x| &x.iteration.run_id)
             .unique()
             .collect::<Vec<_>>();
@@ -228,7 +234,10 @@ impl<'a> ScenarioRunDataset<'a> {
         db: &DatabaseConnection,
         model: &impl Fn(Vec<&Metrics>, f32) -> Data,
     ) -> anyhow::Result<RunData> {
-        let cpu_avg_pow = dao::run::fetch(self.run_id, &db).await?.cpu_avg_power;
+        let run = dao::run::fetch(self.run_id, &db).await?;
+        let cpu_avg_pow = run.cpu_avg_power;
+        let start_time = run.start_time;
+        let stop_time = run.stop_time;
 
         // build up process map
         // proc_id  |  data for proc per iteration
@@ -279,6 +288,8 @@ impl<'a> ScenarioRunDataset<'a> {
 
         Ok(RunData {
             run_id: self.run_id,
+            start_time,
+            stop_time,
             data: total_run_data,
             process_data,
         })
@@ -309,10 +320,12 @@ mod tests {
         )
         .await?;
 
-        let dataset = DatasetBuilder::new(&db)
+        let dataset = DatasetBuilder::new()
             .scenarios_all()
             .all()
             .last_n_runs(3)
+            .all()
+            .build(&db)
             .await?;
 
         assert_eq!(dataset.data.len(), 14);
@@ -334,10 +347,12 @@ mod tests {
         )
         .await?;
 
-        let dataset = DatasetBuilder::new(&db)
+        let dataset = DatasetBuilder::new()
             .scenarios_all()
             .all()
             .last_n_runs(3)
+            .all()
+            .build(&db)
             .await?;
 
         let scenario_datasets = dataset.by_scenario(false);
@@ -416,10 +431,12 @@ mod tests {
         )
         .await?;
 
-        let dataset = DatasetBuilder::new(&db)
+        let dataset = DatasetBuilder::new()
             .scenarios_all()
             .all()
             .last_n_runs(3)
+            .all()
+            .build(&db)
             .await?;
 
         for scenario_dataset in dataset.by_scenario(false) {
@@ -475,10 +492,12 @@ mod tests {
         )
         .await?;
 
-        let dataset = DatasetBuilder::new(&db)
+        let dataset = DatasetBuilder::new()
             .scenarios_all()
             .all()
             .last_n_runs(3)
+            .all()
+            .build(&db)
             .await?;
 
         for scenario_dataset in dataset.by_scenario(false) {
