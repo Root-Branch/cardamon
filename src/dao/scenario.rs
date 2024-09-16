@@ -1,4 +1,4 @@
-use super::pagination::Page;
+use super::pagination::{Page, Pages};
 use crate::entities::iteration::{self, Entity as Iteration};
 use anyhow::{self, Context};
 use sea_orm::*;
@@ -9,38 +9,54 @@ pub struct ScenarioName {
     pub scenario_name: String,
 }
 
+pub async fn fetch(name: &String, db: &DatabaseConnection) -> anyhow::Result<Option<ScenarioName>> {
+    iteration::Entity::find()
+        .select_only()
+        .select_column(iteration::Column::ScenarioName)
+        .distinct()
+        .filter(iteration::Column::ScenarioName.eq(name))
+        .into_partial_model::<ScenarioName>()
+        .one(db)
+        .await
+        .map_err(anyhow::Error::from)
+}
+
 pub async fn fetch_all(
     page: &Option<Page>,
     db: &DatabaseConnection,
-) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
+) -> anyhow::Result<(Vec<ScenarioName>, Pages)> {
     let query = iteration::Entity::find()
         .select_only()
         .select_column(iteration::Column::ScenarioName)
         .distinct()
         .order_by_asc(iteration::Column::StartTime);
 
-    let count = query
-        .clone()
-        .count(db)
-        .await
-        .context("Error counting all scenarios")?;
+    match page {
+        Some(page) => {
+            let count = query.clone().count(db).await?;
+            let page_count = (count as f64 / page.size as f64).ceil() as u64;
 
-    let query = query.into_partial_model();
-    let res = match page {
-        Some(page) => query.paginate(db, page.size).fetch_page(page.num).await,
+            let res = query
+                .into_partial_model()
+                .paginate(db, page.size)
+                .fetch_page(page.num)
+                .await?;
 
-        _ => query.all(db).await,
+            Ok((res, Pages::Required(page_count)))
+        }
+
+        None => {
+            let res = query.into_partial_model().all(db).await?;
+            Ok((res, Pages::NotRequired))
+        }
     }
-    .context("Error fetching all scenarios")?;
-
-    Ok((res, count))
 }
 
 pub async fn fetch_in_run(
     run: &str,
     page: &Option<Page>,
     db: &DatabaseConnection,
-) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
+) -> anyhow::Result<(Vec<ScenarioName>, Pages)> {
     let query = iteration::Entity::find()
         .select_only()
         .select_column(iteration::Column::ScenarioName)
@@ -48,22 +64,28 @@ pub async fn fetch_in_run(
         .filter(iteration::Column::RunId.eq(run))
         .order_by_asc(iteration::Column::StartTime);
 
-    let count = query.clone().count(db).await.context(format!(
-        "Error counting all scenarios executed in run {}",
-        run
-    ))?;
+    match page {
+        Some(page) => {
+            let count = query.clone().count(db).await.context(format!(
+                "Error counting all scenarios executed in run {}",
+                run
+            ))?;
+            let page_count = (count as f64 / page.size as f64).ceil() as u64;
 
-    let query = query.into_partial_model::<ScenarioName>();
-    let res = match page {
-        Some(page) => query.paginate(db, page.size).fetch_page(page.num).await,
-        _ => query.all(db).await,
+            let res = query
+                .into_partial_model()
+                .paginate(db, page.size)
+                .fetch_page(page.num)
+                .await?;
+
+            Ok((res, Pages::Required(page_count)))
+        }
+
+        None => {
+            let res = query.into_partial_model().all(db).await?;
+            Ok((res, Pages::NotRequired))
+        }
     }
-    .context(format!(
-        "Error fetching all scenarios executed in run {}",
-        run
-    ))?;
-
-    Ok((res, count))
 }
 
 pub async fn fetch_in_range(
@@ -71,7 +93,7 @@ pub async fn fetch_in_range(
     to: i64,
     page: &Option<Page>,
     db: &DatabaseConnection,
-) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
+) -> anyhow::Result<(Vec<ScenarioName>, Pages)> {
     let query = iteration::Entity::find()
         .select_only()
         .select_column(iteration::Column::ScenarioName)
@@ -83,30 +105,35 @@ pub async fn fetch_in_range(
         )
         .order_by_asc(iteration::Column::StartTime);
 
-    let count = query.clone().count(db).await.context(format!(
-        "Error counting scenarios in run between: from {}, to {}",
-        from, to
-    ))?;
+    match page {
+        Some(page) => {
+            let count = query.clone().count(db).await.context(format!(
+                "Error counting scenarios in run between: from {}, to {}",
+                from, to
+            ))?;
+            let page_count = (count as f64 / page.size as f64).ceil() as u64;
 
-    let query = query.into_partial_model::<ScenarioName>();
-    let res = match page {
-        Some(page) => query.paginate(db, page.size).fetch_page(page.num).await,
+            let res = query
+                .into_partial_model()
+                .paginate(db, page.size)
+                .fetch_page(page.num)
+                .await?;
 
-        _ => query.all(db).await,
+            Ok((res, Pages::Required(page_count)))
+        }
+
+        None => {
+            let res = query.into_partial_model().all(db).await?;
+            Ok((res, Pages::NotRequired))
+        }
     }
-    .context(format!(
-        "Error fetching scenarios run between: from {}, to {}",
-        from, to
-    ))?;
-
-    Ok((res, count))
 }
 
-pub async fn fetch_by_name(
+pub async fn fetch_by_query(
     name: &str,
     page: &Option<Page>,
     db: &DatabaseConnection,
-) -> anyhow::Result<(Vec<ScenarioName>, u64)> {
+) -> anyhow::Result<(Vec<ScenarioName>, Pages)> {
     let query = iteration::Entity::find()
         .select_only()
         .select_column(iteration::Column::ScenarioName)
@@ -114,19 +141,23 @@ pub async fn fetch_by_name(
         .filter(iteration::Column::ScenarioName.like(name))
         .order_by_asc(iteration::Column::StartTime);
 
-    let count = query
-        .clone()
-        .count(db)
-        .await
-        .context(format!("Error counting scenarios by name: {}", name))?;
+    match page {
+        Some(page) => {
+            let count = query.clone().count(db).await?;
+            let page_count = (count as f64 / page.size as f64).ceil() as u64;
 
-    let query = query.into_partial_model::<ScenarioName>();
-    let res = match page {
-        Some(page) => query.paginate(db, page.size).fetch_page(page.num).await,
+            let res = query
+                .into_partial_model()
+                .paginate(db, page.size)
+                .fetch_page(page.num)
+                .await?;
 
-        _ => query.all(db).await,
+            Ok((res, Pages::Required(page_count)))
+        }
+
+        None => {
+            let res = query.into_partial_model().all(db).await?;
+            Ok((res, Pages::NotRequired))
+        }
     }
-    .context(format!("Error fetching scenarios by name: {}", name))?;
-
-    Ok((res, count))
 }

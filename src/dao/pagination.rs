@@ -12,3 +12,9 @@ impl Page {
         self.size * self.num
     }
 }
+
+#[derive(Debug)]
+pub enum Pages {
+    NotRequired,
+    Required(u64),
+}

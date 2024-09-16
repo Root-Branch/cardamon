@@ -1,4 +1,5 @@
 use crate::{
+    dao::pagination::Pages,
     data::{dataset::Dataset, dataset_builder::DatasetBuilder, ScenarioData},
     models,
     server::errors::ServerError,
@@ -69,29 +70,37 @@ pub async fn get_scenarios(
 
     let dataset = match &params.search_query {
         Some(query) => {
-            DatasetBuilder::new(&db)
+            DatasetBuilder::new()
                 .scenarios_by_name(query)
                 .page(limit, page)
                 .last_n_runs(5)
+                .all()
+                .build(&db)
                 .await?
         }
         None => {
-            DatasetBuilder::new(&db)
+            DatasetBuilder::new()
                 .scenarios_in_range(begin, end)
                 .page(limit, page)
                 .last_n_runs(5)
+                .all()
+                .build(&db)
                 .await?
         }
     };
 
     let scenario_data = build_scenario_data(&dataset, &db).await?;
+    let total_pages = match dataset.total_scenarios {
+        Pages::NotRequired => 0,
+        Pages::Required(pages) => pages,
+    };
 
     Ok(Json(ScenariosResponse {
         scenario_data,
         pagination: Pagination {
             current_page: page + 1,
             per_page: limit,
-            total_pages: dataset.total_scenarios / limit,
+            total_pages,
         },
     }))
 }
@@ -117,10 +126,12 @@ mod tests {
         )
         .await?;
 
-        let dataset = DatasetBuilder::new(&db)
+        let dataset = DatasetBuilder::new()
             .scenarios_all()
             .all()
             .last_n_runs(3)
+            .all()
+            .build(&db)
             .await?;
 
         let _res = build_scenario_data(&dataset, &db).await?;

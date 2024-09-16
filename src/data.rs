@@ -65,8 +65,15 @@ pub struct ProcessData {
 #[derive(Debug, Serialize)]
 pub struct RunData {
     pub run_id: i32,
+    pub start_time: i64,
+    pub stop_time: i64,
     pub data: Data,
     pub process_data: Vec<ProcessData>,
+}
+impl RunData {
+    pub fn duration(&self) -> f64 {
+        (self.stop_time - self.start_time) as f64 / 1000.0
+    }
 }
 
 #[derive(Debug, Serialize)]

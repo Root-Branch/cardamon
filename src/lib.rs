@@ -10,13 +10,14 @@ pub mod server;
 
 use crate::{
     config::{Config, ExecutionMode},
-    data::{dataset::Dataset, dataset_builder::DatasetBuilder},
+    data::dataset_builder::DatasetBuilder,
     migrations::{Migrator, MigratorTrait},
 };
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use colored::Colorize;
 use config::{ExecutionPlan, Process, ProcessToObserve, ProcessType, Redirect, Scenario};
+use data::dataset_builder::DatasetRows;
 use entities::{iteration, run};
 use sea_orm::*;
 use serde_json::Value;
@@ -473,14 +474,6 @@ async fn run_scenarios<'a>(
     Ok(())
 }
 
-// async fn keep_saving(
-//     run_id: i32,
-//     shared_metrics_log: Arc<Mutex<MetricsLog>>,
-//     db: &DatabaseConnection,
-// ) -> anyhow::Result<()> {
-//     loop {}
-// }
-
 pub async fn run_live<'a>(
     run_id: i32,
     processes_to_observe: Vec<ProcessToObserve>,
@@ -519,6 +512,12 @@ pub async fn run_live<'a>(
             .into_active_model();
         active_iteration.stop_time = ActiveValue::Set(now);
         active_iteration.update(db).await?;
+
+        // update the run stop time
+        let now = Utc::now().timestamp_millis();
+        let mut active_run = dao::run::fetch(run_id, &db).await?.into_active_model();
+        active_run.stop_time = ActiveValue::Set(now);
+        active_run.update(db).await?;
     }
 }
 
@@ -526,7 +525,7 @@ pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
     cpu_avg_power: f32,
     db: &DatabaseConnection,
-) -> anyhow::Result<Dataset> {
+) -> anyhow::Result<DatasetRows> {
     let mut processes_to_observe = exec_plan.external_processes_to_observe.unwrap_or(vec![]); // external procs to observe are cloned here.
 
     // run the application if there is anything to run
@@ -555,7 +554,8 @@ pub async fn run<'a>(
         is_live: sea_orm::ActiveValue::Set(is_live),
         cpu_avg_power: sea_orm::ActiveValue::Set(cpu_avg_power),
         start_time: sea_orm::ActiveValue::Set(start_time),
-        stop_time: sea_orm::ActiveValue::set(None),
+        stop_time: sea_orm::ActiveValue::set(start_time), // set to start time for now we'll update
+                                                          // it later
     }
     .save(db)
     .await?;
@@ -586,18 +586,14 @@ pub async fn run<'a>(
                                                    // timezones
 
     // update run with the stop time
-    active_run.stop_time = ActiveValue::Set(Some(stop_time));
+    active_run.stop_time = ActiveValue::Set(stop_time);
     active_run.save(db).await?;
 
     // stop the application
     shutdown_application(&processes_to_observe)?;
 
     // create a dataset containing the data just collected
-    DatasetBuilder::new(db)
-        .scenarios_in_run(run_id)
-        .all()
-        .last_n_runs(3)
-        .await
+    Ok(DatasetBuilder::new().scenarios_in_run(run_id).all())
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ pub struct Model {
     #[sea_orm(column_type = "Float")]
     pub cpu_avg_power: f32,
     pub start_time: i64,
-    pub stop_time: Option<i64>,
+    pub stop_time: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
