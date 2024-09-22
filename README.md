@@ -19,8 +19,11 @@ Cardamon is a tool to help development teams measure the power consumption and c
 
 # Environment Variables
 
-DATABASE_URL (do not include database name for postgresql or mysql)
-DATABASE_NAME (only required for postgresql and mysql)
+#### DATABASE_URL 
+(do not include database name for postgresql or mysql)
+
+#### DATABASE_NAME 
+(only required for postgresql and mysql)
 
 # Installation
 
