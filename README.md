@@ -135,6 +135,49 @@ process.type = "baremetal"
 
 ### Scenarios
 
+Scenarios are designed to put your application under some amount of load. they should represent some use case of your application. For example, if you're application is a REST API a scenario may simply be a list of curl commands performing some tasks.
+
+**name**
+- type: string
+- required: true
+
+Must be unique
+
+**desc**
+- type: string
+- required: false
+
+A short description of the scenario to remind you what it does
+
+**command**
+- type: string
+- required: true
+
+The command to execute this scenario.
+
+**iterations**
+- type: integer
+- required: false
+- default: 1
+
+the number of times cardamon should execute this scenario per run. It's better to run scenarios multiple times and take an average.
+
+**processes**
+- type: string[]
+- required: true
+
+A list of the processes which need to be started before executing this scenario.
+
+**EXAMPLE**
+```
+[[scenario]]
+name = "sleep"
+desc = "Sleeps for 10 seconds, a real scenario would call your app"
+command = "sleep 10"
+iterations = 2
+processes = ["test_proc"]
+```
+
 ### Observations
 
 # FAQ
