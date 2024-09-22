@@ -45,9 +45,15 @@ Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 `cargo install cardamon`
 
-## CLI Reference
+## Quickstart
 
-Coming soon!
+Create a new cardamon configuration file using `cardamon init` and following the on screen instructions.
+
+This will place a new cardamon.toml file with example processes, scenarios and observations in the directory you ran the init command. 
+
+To run an observation use `cardamon run <observation name>`.
+
+To see the stats gathered by previous runs use `cardamon stats`
 
 ## Configuration
 
