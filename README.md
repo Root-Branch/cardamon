@@ -55,7 +55,7 @@ Coming soon!
 
 ## Scenarios
 
-Coming soon!
+A scenario encapsulates a usage behaviour that you want to measure (e.g. add items to basket). You can then run your code against these repeateable behaviours and see how your software power consumption changes over time. You can view this in the cardamon-ui. Cardamon scenarios are compatible with [ISO/IEC 21031 - Software Carbon Intensity (SCI) specification](https://www.iso.org/standard/86612.html). 
 
 ## Live Monitor
 
@@ -65,9 +65,7 @@ Coming soon!
 
 ### Can I use Cardamon on my own project or at my work?
 
-> Cardamon is released under the PolyForm Shield License 1.0. This allows anyone to use Cardamon, in anyway they wish, as long as it is not used in a product or service which competes with Root & Branch Ltd (the company behind Cardamon).
->
-> Root & Branch Ltd sell software consultancy services and use Cardamon internally to provide those services to their clients, so as long as you don't use Cardamon to provide a product or service similar to those offered by Root & Branch then you are free to use it any project, commercial or otherwise.
+> Cardamon is released under the PolyForm Shield License 1.0. Anyone can use Cardamon in-house to build their own software, including commercially. If you want to use Cardamon to offer a competing service to Root & Branch (e.g. instrument another company's software) then you will need permission, please get in touch. We have lots of green software industry friends who are able to use Cardamon.
 
 ### I'd like to use Cardamon to measure the power consumption of my software, but I don't know how
 
