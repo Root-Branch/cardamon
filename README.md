@@ -15,6 +15,7 @@ Cardamon is a tool to help development teams measure the power consumption and c
 - [Environment Variables](#environment-variables)
 - [Quickstart](#quickstart)
 - [Configuration](#configuration)
+- [CLI](#cli)
 - [FAQ](#faq)
 - [License](#license)
 
@@ -179,6 +180,8 @@ processes = ["test_proc"]
 ```
 
 ### Observations
+
+# CLI
 
 # FAQ
 
