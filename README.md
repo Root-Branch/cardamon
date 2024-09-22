@@ -12,18 +12,11 @@
 Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software.
 
 - [Installation](#installation)
+- [Environment Variables](#environment-variables)
 - [Quickstart](#quickstart)
 - [Configuration](#configuration)
 - [FAQ](#faq)
 - [License](#license)
-
-# Environment Variables
-
-#### DATABASE_URL 
-(do not include database name for postgresql or mysql)
-
-#### DATABASE_NAME 
-(only required for postgresql and mysql)
 
 # Installation
 
@@ -40,11 +33,21 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 irm -Uri https://cardamon.rootandbranch.io/install.ps1 | iex
 ```
 
-### Cargo
+**Cargo**
 
 Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 `cargo install cardamon`
+
+# Environment Variables
+
+**DATABASE_URL**
+
+(do not include database name for postgresql or mysql)
+
+**DATABASE_NAME**
+
+(only required for postgresql and mysql)
 
 # Quickstart
 
@@ -66,19 +69,22 @@ Processes are the things you would like cardamon to start/stop and measure durin
 
 You can specify as many processes as you like. The options for each process are as follows: 
 
-#### name
+**name**
+
 - type: string
 - required: true
      
 must be unique
 
-#### up
+**up**
+
 - type: string
 - required: true
-- 
+  
 The command to start this process.
 
-#### down
+**down**
+
 - type: string
 - required: false
 - default: empty string
@@ -86,19 +92,22 @@ The command to start this process.
 The command to stop this process. Cardamon will pass the PID of the process to this command. You can
 use `{pid}` as a placeholder in the command e.g. `kill {pid}`.
 
-#### proccess.type
+**proccess.type**
+
 - type: "baremetal" | "docker"
 - required: true
 
 The type of process which is being executed.
 
-#### process.containers
+**process.containers**
+
 - type: string[]
 - required: true (if process.type equals "docker"
 
 Docker processes may initiate multiple containers from a single command, e.g. `docker compose up -d`. This is the list of containers started by this process that you would like cardamon to measure.
 
-#### redirect.to
+**redirect.to**
+
 - type: "null" | "parent" | "file"
 - required: false
 - default: "file"
@@ -106,7 +115,7 @@ Docker processes may initiate multiple containers from a single command, e.g. `d
 Where to redirect this processes stdout and stderr. "null" ignores output, "parent" attaches the processes output to three cardamon process, "file"
 writes stdout and stderr to a file of the same name as this process e.g. <process name>.stdout
 
-#### EXAMPLE
+**EXAMPLE:**
 ```
 [[process]]
 name = "db"
