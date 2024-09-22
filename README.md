@@ -181,6 +181,28 @@ processes = ["test_proc"]
 
 ### Observations
 
+Observations are named "runs". They can specify one or more scenarios to run out they can run cause cardamom to run in "live monitor" mode.
+
+Observations have the following properties:
+
+**name**
+- type: string
+- required: true
+
+Must be unique.
+
+**scenarios**
+- type: string[]
+- required: true if no processes are defined.
+
+A list of scenarios to execute whilst observing the application.
+
+**processes**
+- type: string[]
+- required - true if no scenarios are defined.
+
+A list of processes to execute and observe. Running an observation with this property set runs Cardamon in Live Monitor mode.
+
 # CLI
 
 # FAQ
