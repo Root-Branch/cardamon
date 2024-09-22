@@ -14,8 +14,6 @@ Cardamon is a tool to help development teams measure the power consumption and c
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Configuration](#configuration)
-- [Scenarios](#scenarios)
-- [Live Monitor](#live-monitor)
 - [FAQ](#faq)
 - [License](#license)
 
@@ -65,15 +63,63 @@ Processes are the things you would like cardamon to start/stop and measure durin
 
 You can specify as many processes as you like. The options for each process are as follows: 
 
-**name** (required)
-each process name must be unique
+#### name
+- type: string
+- required: true
+     
+must be unique
 
-****
+#### up
+- type: string
+- required: true
+- 
+The command to start this process.
 
+#### down
+- type: string
+- required: false
+- default: empty string
 
-Each prices must have a **unique name** and a command for starting the process (the **up** command). This can be any shell command you like. 
+The command to stop this process. Cardamon will pass the PID of the process to this command. You can
+use `{pid}` as a placeholder in the command e.g. `kill {pid}`.
 
-Optionally you
+#### proccess.type
+- type: "baremetal" | "docker"
+- required: true
+
+The type of process which is being executed.
+
+#### process.containers
+- type: string[]
+- required: true (if process.type equals "docker"
+
+Docker processes may initiate multiple containers from a single command, e.g. `docker compose up -d`. This is the list of containers started by this process that you would like cardamon to measure.
+
+#### redirect.to
+- type: "null" | "parent" | "file"
+- required: false
+- default: "file"
+
+Where to redirect this processes stdout and stderr. "null" ignores output, "parent" attaches the processes output to three cardamon process, "file"
+writes stdout and stderr to a file of the same name as this process e.g. <process name>.stdout
+
+#### EXAMPLE
+```
+[[process]]
+name = "db"
+up = "docker compose up -d"
+down = "docker compose down"
+redirect.to = "file"
+process.type = "docker"
+process.containers = ["postgres"]
+
+[[process]]
+name = "test_proc"
+up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
+down = "kill {pid}"
+redirect.to = "file"
+process.type = "baremetal"
+```
 
 ### Scenarios
 
