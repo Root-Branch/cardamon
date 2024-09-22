@@ -12,19 +12,19 @@
 Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software.
 
 - [Installation](#installation)
-- [CLI Reference](#cli-reference)
+- [Quickstart](#quickstart)
 - [Configuration](#configuration)
 - [Scenarios](#scenarios)
 - [Live Monitor](#live-monitor)
 - [FAQ](#faq)
 - [License](#license)
 
-## Environment Variables
+# Environment Variables
 
 DATABASE_URL (do not include database name for postgresql or mysql)
 DATABASE_NAME (only required for postgresql and mysql)
 
-## Installation
+# Installation
 
 The easiest way to install Cardamon is using our install script.
 
@@ -45,7 +45,7 @@ Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 `cargo install cardamon`
 
-## Quickstart
+# Quickstart
 
 Create a new cardamon configuration file using `cardamon init` and following the on screen instructions.
 
@@ -55,17 +55,29 @@ To run an observation use `cardamon run <observation name>`.
 
 To see the stats gathered by previous runs use `cardamon stats`
 
-## Configuration
+# Configuration
 
-Coming soon!
+### CPU
 
-## Scenarios
+### Processes
 
-Coming soon!
+Processes are the things you would like cardamon to start/stop and measure during a run. Currently only executables and docker containers are supported but podman and kubernetes are planned.
 
-## Live Monitor
+You can specify as many processes as you like. The options for each process are as follows: 
 
-Coming soon!
+**name** (required)
+each process name must be unique
+
+****
+
+
+Each prices must have a **unique name** and a command for starting the process (the **up** command). This can be any shell command you like. 
+
+Optionally you
+
+### Scenarios
+
+### Observations
 
 # FAQ
 
@@ -89,7 +101,7 @@ Coming soon!
 > - Checkout the issues board on github, there's always features and fixes that need implementing.
 > - Spread the word! Tell others about the project and encourage them to use it.
 
-## License
+# License
 
 Cardamon is distributed under the terms of the PolyForm Shield License (Version 1.0).
 
