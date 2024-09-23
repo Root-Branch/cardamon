@@ -1,16 +1,16 @@
 use crate::{
     dao::pagination::Pages,
     data::{
-        dataset::{AggregationMethod, Dataset},
+        dataset::{AggregationMethod, Dataset, LiveDataFilter},
         dataset_builder::DatasetBuilder,
-        ScenarioData,
+        ProcessMetrics, ScenarioData,
     },
-    models,
+    models::{self, rab_linear_model},
     server::errors::ServerError,
 };
 use anyhow::Context;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     Json,
 };
 use chrono::Utc;
@@ -56,12 +56,44 @@ pub struct ScenariosResponse {
     pub pagination: Pagination,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunsParams {
+    pub page: Option<u64>,
+    pub limit: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessResponse {
+    pub process_name: String,
+    pub pow_contrib_perc: f64,
+    pub iteration_metrics: Vec<Vec<ProcessMetrics>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunResponse {
+    pub start_time: i64,
+    pub duration: f64,
+    pub pow: f64,
+    pub co2: f64,
+    pub processes: Vec<ProcessResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunsResponse {
+    pub runs: Vec<RunResponse>,
+    pub pagination: Pagination,
+}
+
 pub async fn build_scenario_data(
     dataset: &Dataset,
     db: &DatabaseConnection,
 ) -> anyhow::Result<Vec<ScenarioData>> {
     let mut scenario_data = vec![];
-    for scenario_dataset in dataset.by_scenario(false) {
+    for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
         let data = scenario_dataset
             .apply_model(
                 &db,
@@ -143,6 +175,65 @@ pub async fn get_scenarios(
 
     Ok(Json(ScenariosResponse {
         scenarios,
+        pagination: Pagination {
+            current_page: page + 1,
+            per_page: limit,
+            total_pages,
+        },
+    }))
+}
+
+pub async fn get_runs(
+    State(db): State<DatabaseConnection>,
+    Path(scenario_name): Path<String>,
+    Query(params): Query<RunsParams>,
+) -> Result<Json<RunsResponse>, ServerError> {
+    let page = params.page.unwrap_or(1);
+    let page = page - 1; // DB needs -1 indexing
+    let limit = params.limit.unwrap_or(5);
+
+    info!("Fetching runs for scenario with name {} ", scenario_name);
+
+    let dataset = DatasetBuilder::new()
+        .scenario(&scenario_name)
+        .all()
+        .runs_all()
+        .page(limit, page)?
+        .build(&db)
+        .await?;
+    let total_pages = match dataset.total_runs {
+        Pages::NotRequired => 0,
+        Pages::Required(pages) => pages,
+    };
+
+    let mut runs = vec![];
+    for scenario_dataset in &dataset.by_scenario(LiveDataFilter::IncludeLive) {
+        for run_dataset in scenario_dataset.by_run() {
+            let model_data = run_dataset
+                .apply_model(&db, &rab_linear_model(42.0))
+                .await?;
+            let processes = model_data
+                .process_data
+                .iter()
+                .map(|data| ProcessResponse {
+                    process_name: data.process_id.clone(),
+                    pow_contrib_perc: data.pow_perc,
+                    iteration_metrics: data.iteration_metrics.clone(),
+                })
+                .collect_vec();
+
+            runs.push(RunResponse {
+                start_time: model_data.start_time,
+                duration: model_data.duration(),
+                pow: model_data.data.pow,
+                co2: model_data.data.co2,
+                processes,
+            });
+        }
+    }
+
+    Ok(Json(RunsResponse {
+        runs,
         pagination: Pagination {
             current_page: page + 1,
             per_page: limit,
