@@ -8,11 +8,13 @@ use crate::{
     models,
     server::errors::ServerError,
 };
+use anyhow::Context;
 use axum::{
     extract::{Query, State},
     Json,
 };
 use chrono::Utc;
+use itertools::Itertools;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument};
@@ -38,8 +40,19 @@ pub struct ScenariosParams {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ScenarioResponse {
+    pub scenario_name: String,
+    pub last_run: i64,
+    pub pow: f64,
+    pub co2: f64,
+    pub sparkline: Vec<f64>,
+    pub trend: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScenariosResponse {
-    pub scenario_data: Vec<ScenarioData>,
+    pub scenarios: Vec<ScenarioResponse>,
     pub pagination: Pagination,
 }
 
@@ -105,8 +118,31 @@ pub async fn get_scenarios(
         Pages::Required(pages) => pages,
     };
 
+    let mut scenarios = vec![];
+    for scenario_data in scenario_data {
+        let scenario_name = scenario_data.scenario_name;
+        let last_run = scenario_data.run_data.first().context("")?.start_time;
+        let pow = scenario_data.data.pow;
+        let co2 = scenario_data.data.co2;
+        let sparkline = scenario_data
+            .run_data
+            .iter()
+            .map(|run_data| run_data.data.pow)
+            .collect_vec();
+        let trend = scenario_data.trend;
+
+        scenarios.push(ScenarioResponse {
+            scenario_name,
+            last_run,
+            pow,
+            co2,
+            sparkline,
+            trend,
+        });
+    }
+
     Ok(Json(ScenariosResponse {
-        scenario_data,
+        scenarios,
         pagination: Pagination {
             current_page: page + 1,
             per_page: limit,
