@@ -34,13 +34,13 @@ The easiest way to install Cardamon is using our install script.
 
 **Linux & Mac**
 
-`curl -fsSL https://cardamon.rootandbranch.io/install.sh | sh`
+`curl -fsSL https://cardamon.io/install.sh | sh`
 
 **Windows**
 
 ```
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-irm -Uri https://cardamon.rootandbranch.io/install.ps1 | iex
+irm -Uri https://cardamon.io/install.ps1 | iex
 ```
 
 **Cargo**
