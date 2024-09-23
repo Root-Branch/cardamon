@@ -64,59 +64,67 @@ To see the stats gathered by previous runs use `cardamon stats`
 
 ### CPU
 
+This contains information about the CPU used to run your application. The options are as follows:
+
+***name***
+- *type: string*
+- *required: true*
+
+*The manufacturers name of your processor.*
+
+***avg_power***
+- *type: float*
+- *required: true*
+
+*The processors average power consumption in watts*
+
 ### Processes
 
 Processes are the things you would like cardamon to start/stop and measure during a run. Currently only executables and docker containers are supported but podman and kubernetes are planned.
 
 You can specify as many processes as you like. The options for each process are as follows: 
 
-**name**
+***name***
+- *type: string*
+- *required: true*
+   
+*must be unique.*
 
-- type: string
-- required: true
-     
-must be unique
-
-**up**
-
-- type: string
-- required: true
+***up***
+- *type: string*
+- *required: true*
   
-The command to start this process.
+*The command to start this process.*
 
-**down**
+***down***
+- *type: string*
+- *required: false*
+- *default: empty string*
 
-- type: string
-- required: false
-- default: empty string
+*The command to stop this process. Cardamon will pass the PID of the process to this command. You can
+use `{pid}` as a placeholder in the command e.g. `kill {pid}`.*
 
-The command to stop this process. Cardamon will pass the PID of the process to this command. You can
-use `{pid}` as a placeholder in the command e.g. `kill {pid}`.
+***proccess.type***
+- *type: "baremetal" | "docker"*
+- *required: true*
 
-**proccess.type**
+*The type of process which is being executed.*
 
-- type: "baremetal" | "docker"
-- required: true
+***process.containers***
+- *type: string[]*
+- *required: true (if process.type equals "docker"*
 
-The type of process which is being executed.
+*Docker processes may initiate multiple containers from a single command, e.g. `docker compose up -d`. This is the list of containers started by this process that you would like cardamon to measure.*
 
-**process.containers**
+***redirect.to***
+- *type: "null" | "parent" | "file"*
+- *required: false*
+- *default: "file"*
 
-- type: string[]
-- required: true (if process.type equals "docker"
+*Where to redirect this processes stdout and stderr. "null" ignores output, "parent" attaches the processes output to three cardamon process, "file"
+writes stdout and stderr to a file of the same name as this process e.g. <process name>.stdout.*
 
-Docker processes may initiate multiple containers from a single command, e.g. `docker compose up -d`. This is the list of containers started by this process that you would like cardamon to measure.
-
-**redirect.to**
-
-- type: "null" | "parent" | "file"
-- required: false
-- default: "file"
-
-Where to redirect this processes stdout and stderr. "null" ignores output, "parent" attaches the processes output to three cardamon process, "file"
-writes stdout and stderr to a file of the same name as this process e.g. <process name>.stdout
-
-**EXAMPLE:**
+***EXAMPLE:***
 ```
 [[process]]
 name = "db"
@@ -138,38 +146,38 @@ process.type = "baremetal"
 
 Scenarios are designed to put your application under some amount of load. they should represent some use case of your application. For example, if you're application is a REST API a scenario may simply be a list of curl commands performing some tasks.
 
-**name**
-- type: string
-- required: true
+***name***
+- *type: string*
+- *required: true*
 
-Must be unique
+*Must be unique.*
 
-**desc**
-- type: string
-- required: false
+***desc***
+- *type: string*
+- *required: false*
 
-A short description of the scenario to remind you what it does
+*A short description of the scenario to remind you what it does.*
 
-**command**
-- type: string
-- required: true
+***command***
+- *type: string*
+- *required: true*
 
-The command to execute this scenario.
+*The command to execute this scenario.*
 
-**iterations**
-- type: integer
-- required: false
-- default: 1
+***iterations***
+- *type: integer*
+- *required: false*
+- *default: 1*
 
-the number of times cardamon should execute this scenario per run. It's better to run scenarios multiple times and take an average.
+*The number of times cardamon should execute this scenario per run. It's better to run scenarios multiple times and take an average.*
 
-**processes**
-- type: string[]
-- required: true
+***processes***
+- *type: string[]*
+- *required: true*
 
-A list of the processes which need to be started before executing this scenario.
+*A list of the processes which need to be started before executing this scenario.*
 
-**EXAMPLE**
+***EXAMPLE***
 ```
 [[scenario]]
 name = "sleep"
@@ -185,25 +193,62 @@ Observations are named "runs". They can specify one or more scenarios to run out
 
 Observations have the following properties:
 
-**name**
-- type: string
-- required: true
+***name***
+- *type: string*
+- *required: true*
 
-Must be unique.
+*Must be unique.*
 
-**scenarios**
-- type: string[]
-- required: true if no processes are defined.
+***scenarios***
+- *type: string[]*
+- *required: true if no processes are defined.*
 
-A list of scenarios to execute whilst observing the application.
+*A list of scenarios to execute whilst observing the application.*
 
-**processes**
-- type: string[]
-- required - true if no scenarios are defined.
+***processes***
+- *type: string[]*
+- *required - true if no scenarios are defined.*
 
-A list of processes to execute and observe. Running an observation with this property set runs Cardamon in Live Monitor mode.
+*A list of processes to execute and observe. Running an observation with this property set runs Cardamon in Live Monitor mode.*
 
 # CLI
+
+### Init
+
+`cardamon init`
+
+Produces a new cardamon.toml file.
+
+### Run
+
+`cardamon run <observation_name>`
+
+Runs a single observation.
+
+***Options***
+- ***name**: The name of the observation you would like to run*
+- ***pids**: A comma separated list of PIDs started externally to cardamon that you would like cardamon to measure*
+- ***containers**: A comma separated list of container names, started externally to cardamon, that you would like cardamon to measure*
+- ***external_only**: If set, cardamon will not try to start any processes and will instead only measure the pids specified by the `pids` and `containers` option*
+
+### Stats
+
+`cardamon stats [scenario_name]`
+
+Shows the stats for previous runs of scenarios.
+
+***Options***
+- ***scenario_name**: An optional argument for the scenario you want to show stats for*
+- ***previous_runs**: The number of previous runs to show*
+
+### Ui
+
+`cardamon ui [port]`
+
+Start the UI server.
+
+***Options***
+- ***port**: The port to listen on*
 
 # FAQ
 
