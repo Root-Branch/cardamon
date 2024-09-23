@@ -6,7 +6,7 @@ use sea_orm::DatabaseConnection;
 
 pub type BoxFuture = Pin<Box<dyn Future<Output = anyhow::Result<Data>> + Send>>;
 
-pub fn rab_linear_model(ci_g_w: f32) -> impl Fn(Vec<&Metrics>, f32) -> Data {
+pub fn rab_linear_model(ci_g_w: f32) -> impl Fn(&Vec<&Metrics>, f32) -> Data {
     return move |metrics, cpu_avg_pow_w| {
         // TODO: THIS MUST BE FETCH ASYNCRONOUSLY USING THE run_id!
 
@@ -36,6 +36,6 @@ pub fn rab_linear_model(ci_g_w: f32) -> impl Fn(Vec<&Metrics>, f32) -> Data {
 pub fn rab_nonlinear_model(
     _ci: f32,
     _db: &DatabaseConnection,
-) -> impl Fn(&[&Metrics], i32) -> Data {
+) -> impl Fn(&Vec<&Metrics>, f32) -> Data {
     return move |_metrics, _run_id| todo!();
 }

@@ -55,11 +55,18 @@ impl Data {
     }
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct ProcessMetrics {
+    pub timestamp: i64,
+    pub cpu_usage: f64,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ProcessData {
     pub process_id: String,
     pub data: Data,
     pub pow_perc: f64,
+    pub iteration_metrics: Vec<Vec<ProcessMetrics>>,
 }
 
 #[derive(Debug, Serialize)]

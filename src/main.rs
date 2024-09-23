@@ -2,7 +2,7 @@ use anyhow::Context;
 use cardamon::{
     cleanup_stdout_stderr,
     config::{self, Config, ExecutionPlan, ProcessToObserve},
-    data::{dataset_builder::DatasetBuilder, Data},
+    data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder, Data},
     db_connect, db_migrate, init_config,
     models::rab_linear_model,
     run, server,
@@ -170,7 +170,10 @@ async fn main() -> anyhow::Result<()> {
                 .await?;
 
             println!("\n{}", " Summary ".reversed().green());
-            for scenario_dataset in observation_dataset.by_scenario(false).iter() {
+            for scenario_dataset in observation_dataset
+                .by_scenario(LiveDataFilter::ExcludeLive)
+                .iter()
+            {
                 let run_datasets = scenario_dataset.by_run();
 
                 // execute model for current run
@@ -249,7 +252,7 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let f = rab_linear_model(42.0);
-            for scenario_dataset in dataset.by_scenario(false) {
+            for scenario_dataset in dataset.by_scenario(LiveDataFilter::ExcludeLive) {
                 println!(
                     "{}:",
                     format!("{}", scenario_dataset.scenario_name()).green()

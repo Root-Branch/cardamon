@@ -65,9 +65,10 @@ async fn create_app(db: &DatabaseConnection) -> Router {
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
     Router::new()
-        .route("/api/scenarios", get(routes::get_scenarios))
         .route("/", get(index_handler))
         .route("/index.html", get(index_handler))
+        .route("/api/scenarios", get(routes::get_scenarios))
+        .route("/api/runs/:scenario_name", get(routes::get_runs))
         .route("/*file", get(static_handler))
         .fallback_service(get(not_found))
         .with_state(db.clone())
