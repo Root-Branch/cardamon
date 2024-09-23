@@ -12,8 +12,8 @@
 Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software.
 
 - [Installation](#installation)
-- [Environment Variables](#environment-variables)
 - [Quickstart](#quickstart)
+- [Environment Variables](#environment-variables)
 - [Configuration](#configuration)
 - [CLI](#cli)
 - [FAQ](#faq)
@@ -40,16 +40,6 @@ Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 `cargo install cardamon`
 
-# Environment Variables
-
-**DATABASE_URL**
-
-(do not include database name for postgresql or mysql)
-
-**DATABASE_NAME**
-
-(only required for postgresql and mysql)
-
 # Quickstart
 
 Create a new cardamon configuration file using `cardamon init` and following the on screen instructions.
@@ -59,6 +49,17 @@ This will place a new cardamon.toml file with example processes, scenarios and o
 To run an observation use `cardamon run <observation name>`.
 
 To see the stats gathered by previous runs use `cardamon stats`
+
+# Environment Variables
+
+By default, Cardamon saves your data to a locally stored SQLite database. If you would like to stire Cardamon data in any other location then you can set the following environment variables.   
+**DATABASE_URL**
+
+(omit database name from URL when using postgresql or mysql, use DATABASE_NAME instead)
+
+**DATABASE_NAME**
+
+(only required for postgresql and mysql)
 
 # Configuration
 
@@ -254,9 +255,8 @@ Start the UI server.
 
 ### Can I use Cardamon on my own project or at my work?
 
-> Cardamon is released under the PolyForm Shield License 1.0. This allows anyone to use Cardamon, in anyway they wish, as long as it is not used in a product or service which competes with Root & Branch Ltd (the company behind Cardamon).
->
-> Root & Branch Ltd sell software consultancy services and use Cardamon internally to provide those services to their clients, so as long as you don't use Cardamon to provide a product or service similar to those offered by Root & Branch then you are free to use it any project, commercial or otherwise.
+> Cardamon is released under the PolyForm Shield License 1.0. Anyone can use Cardamon in-house to build their own software, including commercially. 
+> If you want to use Cardamon to offer a competing service to Root & Branch (e.g. instrument another company's software) then you will need permission, please get in touch. We have lots of green software industry friends who are able to use Cardamon.
 
 ### I'd like to use Cardamon to measure the power consumption of my software, but I don't know how
 
