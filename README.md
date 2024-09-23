@@ -11,6 +11,7 @@
 
 Cardamon is a tool to help development teams measure the power consumption and carbon emissions of their software.
 
+- [Introduction](#introduction)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Environment Variables](#environment-variables)
@@ -18,6 +19,14 @@ Cardamon is a tool to help development teams measure the power consumption and c
 - [CLI](#cli)
 - [FAQ](#faq)
 - [License](#license)
+
+# Introduction
+
+Cardamon is built around the concept of observations and scenarios.
+
+A scenario encapsulates a usage behaviour that you want to measure (e.g. add items to basket). You can then run your code against these repeateable behaviours and see how your software power consumption changes over time. You can view this in the cardamon-ui. Cardamon scenarios are compatible with [ISO/IEC 21031 - Software Carbon Intensity (SCI) specification](https://www.iso.org/standard/86612.html).
+
+An observation is a measurement of one or more scenarios.
 
 # Installation
 
