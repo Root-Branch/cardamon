@@ -42,17 +42,15 @@ Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 # Quickstart
 
-Create a new cardamon configuration file using `cardamon init` and following the on screen instructions.
+`cardamon init` - create a new cardamon configuration file.
 
-This will place a new cardamon.toml file with example processes, scenarios and observations in the directory you ran the init command. 
+`cardamon run <observation name>` - runs the specified observation.
 
-To run an observation use `cardamon run <observation name>`.
-
-To see the stats gathered by previous runs use `cardamon stats`
+`cardamon stats` - shows stats per scenario
 
 # Environment Variables
 
-By default, Cardamon saves your data to a locally stored SQLite database. If you would like to stire Cardamon data in any other location then you can set the following environment variables.   
+By default, Cardamon saves your data to a locally stored SQLite database. If you would like to store Cardamon data in any other location then you can set the following environment variables.   
 **DATABASE_URL**
 
 (omit database name from URL when using postgresql or mysql, use DATABASE_NAME instead)
@@ -67,150 +65,87 @@ By default, Cardamon saves your data to a locally stored SQLite database. If you
 
 This contains information about the CPU used to run your application. The options are as follows:
 
-***name***
-- *type: string*
-- *required: true*
+```toml
+[cpu]
 
-*The manufacturers name of your processor.*
+# The manufacturers name for your processor
+name = "AMD Ryzen 7 PRO 6850U with Radeon Graphics"
 
-***avg_power***
-- *type: float*
-- *required: true*
-
-*The processors average power consumption in watts*
+# The processors average power consumption in watts
+avg_power = 11.223
+```
 
 ### Processes
 
-Processes are the things you would like cardamon to start/stop and measure during a run. Currently only executables and docker containers are supported but podman and kubernetes are planned.
+Processes are the things you would like cardamon to start/stop and measure during a run. Currently only executables and docker containers are supported but podman and kubernetes are planned. You can specify as many processes as you like. Below is an example process: 
 
-You can specify as many processes as you like. The options for each process are as follows: 
-
-***name***
-- *type: string*
-- *required: true*
-   
-*must be unique.*
-
-***up***
-- *type: string*
-- *required: true*
-  
-*The command to start this process.*
-
-***down***
-- *type: string*
-- *required: false*
-- *default: empty string*
-
-*The command to stop this process. Cardamon will pass the PID of the process to this command. You can
-use `{pid}` as a placeholder in the command e.g. `kill {pid}`.*
-
-***proccess.type***
-- *type: "baremetal" | "docker"*
-- *required: true*
-
-*The type of process which is being executed.*
-
-***process.containers***
-- *type: string[]*
-- *required: true (if process.type equals "docker"*
-
-*Docker processes may initiate multiple containers from a single command, e.g. `docker compose up -d`. This is the list of containers started by this process that you would like cardamon to measure.*
-
-***redirect.to***
-- *type: "null" | "parent" | "file"*
-- *required: false*
-- *default: "file"*
-
-*Where to redirect this processes stdout and stderr. "null" ignores output, "parent" attaches the processes output to three cardamon process, "file"
-writes stdout and stderr to a file of the same name as this process e.g. <process name>.stdout.*
-
-***EXAMPLE:***
-```
+```toml
 [[process]]
+
+# must be unique
 name = "db"
+
+# The command to start this process
 up = "docker compose up -d"
+
+# (OPTIONAL) The command to stop this process. Cardamon will pass the PID of the process to this command. You can
+# use `{pid}` as a placeholder in the command e.g. `kill {pid}`
 down = "docker compose down"
-redirect.to = "file"
+
+# The type of process which is being executed. Can be "docker" | "baremetal"
 process.type = "docker"
+
+# (OPTIONAL) Docker processes may initiate multiple containers from a single command, e.g. `docker compose up -d`.
+# This is the list of containers started by this process that you would like cardamon to measure
 process.containers = ["postgres"]
 
-[[process]]
-name = "test_proc"
-up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
-down = "kill {pid}"
+# (OPTIONAL) Where to redirect this processes stdout and stderr. "null" ignores output, "parent" attaches the
+# processes output to three cardamon process, "file" writes stdout and stderr to a file of the same name as this
+# process e.g. <process name>.stdout. Will default to "file"
 redirect.to = "file"
-process.type = "baremetal"
 ```
 
 ### Scenarios
 
 Scenarios are designed to put your application under some amount of load. they should represent some use case of your application. For example, if you're application is a REST API a scenario may simply be a list of curl commands performing some tasks.
 
-***name***
-- *type: string*
-- *required: true*
-
-*Must be unique.*
-
-***desc***
-- *type: string*
-- *required: false*
-
-*A short description of the scenario to remind you what it does.*
-
-***command***
-- *type: string*
-- *required: true*
-
-*The command to execute this scenario.*
-
-***iterations***
-- *type: integer*
-- *required: false*
-- *default: 1*
-
-*The number of times cardamon should execute this scenario per run. It's better to run scenarios multiple times and take an average.*
-
-***processes***
-- *type: string[]*
-- *required: true*
-
-*A list of the processes which need to be started before executing this scenario.*
-
-***EXAMPLE***
-```
+```toml
 [[scenario]]
+
+# Must be unique
 name = "sleep"
+
+# (OPTIONAL) A short description of the scenario to remind you what it does
 desc = "Sleeps for 10 seconds, a real scenario would call your app"
+
+# The command to execute this scenario
 command = "sleep 10"
+
+# (OPTIONAL) The number of times cardamon should execute this scenario per run. It's better to run scenarios
+# multiple times and take an average. Defaults to 1
 iterations = 2
+
+# A list of the processes which need to be started before executing this scenario
 processes = ["test_proc"]
 ```
 
 ### Observations
 
-Observations are named "runs". They can specify one or more scenarios to run out they can run cause cardamom to run in "live monitor" mode.
+An observation is how we take a 'measurement'. Observations can be run in two modes. As a live monitor, where you specify processes to measure. Or as a scenario runner, where you specify scenarios to run. 
 
-Observations have the following properties:
+```toml
+[[observation]]
 
-***name***
-- *type: string*
-- *required: true*
+# Must be unique
+name = "my_observation"
 
-*Must be unique.*
+# A list of scenarios to execute whilst observing the application. Only required if no processes are defined
+scenarios = ["sleep"]
 
-***scenarios***
-- *type: string[]*
-- *required: true if no processes are defined.*
-
-*A list of scenarios to execute whilst observing the application.*
-
-***processes***
-- *type: string[]*
-- *required - true if no scenarios are defined.*
-
-*A list of processes to execute and observe. Running an observation with this property set runs Cardamon in Live Monitor mode.*
+# A list of processes to execute and observe. Running an observation with this property set runs Cardamon in
+# Live Monitor mode
+processes = ["test_proc"]
+```
 
 # CLI
 
