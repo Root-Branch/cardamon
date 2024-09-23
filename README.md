@@ -40,17 +40,17 @@ Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 `cargo install cardamon`
 
-## CLI Reference
-
-Coming soon!
-
 ## Configuration
 
-Coming soon!
+Cardamon is configured using a `toml` file. The configuration file consists of 4 sections detailed by.
 
-## Scenarios
+### CPU
 
-Coming soon!
+### Processes
+
+### Scenarios
+
+### Observations
 
 ## Developers
 

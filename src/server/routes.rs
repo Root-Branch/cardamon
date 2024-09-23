@@ -1,6 +1,10 @@
 use crate::{
     dao::pagination::Pages,
-    data::{dataset::Dataset, dataset_builder::DatasetBuilder, ScenarioData},
+    data::{
+        dataset::{AggregationMethod, Dataset},
+        dataset_builder::DatasetBuilder,
+        ScenarioData,
+    },
     models,
     server::errors::ServerError,
 };
@@ -27,6 +31,7 @@ pub struct ScenariosParams {
     pub from_date: Option<i64>,
     pub to_date: Option<i64>,
     pub search_query: Option<String>,
+    pub last_n: Option<u64>,
     pub page: Option<u64>,
     pub limit: Option<u64>,
 }
@@ -45,7 +50,11 @@ pub async fn build_scenario_data(
     let mut scenario_data = vec![];
     for scenario_dataset in dataset.by_scenario(false) {
         let data = scenario_dataset
-            .apply_model(&db, &models::rab_linear_model(42.0))
+            .apply_model(
+                &db,
+                &models::rab_linear_model(42.0),
+                AggregationMethod::MostRecent,
+            )
             .await?;
         scenario_data.push(data);
     }
@@ -62,6 +71,7 @@ pub async fn get_scenarios(
     let end = params
         .to_date
         .unwrap_or_else(|| Utc::now().timestamp_millis());
+    let last_n = params.last_n.unwrap_or(5);
     let page = params.page.unwrap_or(1);
     let page = page - 1; // DB needs -1 indexing
     let limit = params.limit.unwrap_or(5);
@@ -73,7 +83,7 @@ pub async fn get_scenarios(
             DatasetBuilder::new()
                 .scenarios_by_name(query)
                 .page(limit, page)
-                .last_n_runs(5)
+                .last_n_runs(last_n)
                 .all()
                 .build(&db)
                 .await?
@@ -82,7 +92,7 @@ pub async fn get_scenarios(
             DatasetBuilder::new()
                 .scenarios_in_range(begin, end)
                 .page(limit, page)
-                .last_n_runs(5)
+                .last_n_runs(last_n)
                 .all()
                 .build(&db)
                 .await?
@@ -137,8 +147,8 @@ mod tests {
         let _res = build_scenario_data(&dataset, &db).await?;
 
         // uncomment to see generated json response
-        // let json_str = serde_json::to_string_pretty(&_res)?;
-        // println!("{}", json_str);
+        let json_str = serde_json::to_string_pretty(&_res)?;
+        println!("{}", json_str);
 
         Ok(())
     }
