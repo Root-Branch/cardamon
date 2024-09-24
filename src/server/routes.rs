@@ -97,7 +97,7 @@ pub async fn build_scenario_data(
         let data = scenario_dataset
             .apply_model(
                 &db,
-                &models::rab_linear_model(42.0),
+                &models::rab_linear_model(0.12),
                 AggregationMethod::MostRecent,
             )
             .await?;
@@ -210,7 +210,7 @@ pub async fn get_runs(
     for scenario_dataset in &dataset.by_scenario(LiveDataFilter::IncludeLive) {
         for run_dataset in scenario_dataset.by_run() {
             let model_data = run_dataset
-                .apply_model(&db, &rab_linear_model(42.0))
+                .apply_model(&db, &rab_linear_model(0.12))
                 .await?;
             let processes = model_data
                 .process_data
