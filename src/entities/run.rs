@@ -7,6 +7,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    pub cpu_avg_power: i32,
     pub start_time: i64,
     pub stop_time: Option<i64>,
 }

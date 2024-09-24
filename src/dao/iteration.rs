@@ -15,18 +15,34 @@ pub async fn fetch_runs_all(
     scenario: &str,
     page: &Option<Page>,
     db: &DatabaseConnection,
-) -> anyhow::Result<Vec<iteration::Model>> {
+) -> anyhow::Result<(Vec<iteration::Model>, u64)> {
     let query = iteration::Entity::find()
         .filter(iteration::Column::ScenarioName.eq(scenario))
         .order_by_desc(iteration::Column::StartTime);
+
+    let count = query
+        .clone()
+        .distinct_on([iteration::Column::RunId])
+        .count(db)
+        .await
+        .context("Error counting runs")?;
 
     let res = match page {
         Some(page) => query.paginate(db, page.size).fetch_page(page.num).await,
 
         _ => query.all(db).await,
-    };
+    }
+    .context("Error fetching all iterations")?;
 
-    res.context("Error fetching all iterations")
+    // // group iterations into runs
+    // let by_runs = res.into_iter().into_group_map_by(|it| it.run_id);
+    //
+    // let res: Vec<RunIterations> = vec![];
+    // for (run_id, iterations) in by_runs.into_iter() {
+    //     res.push(RunIterations { run_id, iterations })
+    // }
+
+    Ok((res, count))
 }
 
 /// Return all iterations for the given scenario in the given date range. Page the results.
@@ -36,7 +52,7 @@ pub async fn fetch_runs_in_range(
     to: i64,
     page: &Option<Page>,
     db: &DatabaseConnection,
-) -> anyhow::Result<Vec<iteration::Model>> {
+) -> anyhow::Result<(Vec<iteration::Model>, u64)> {
     let query = iteration::Entity::find()
         .filter(
             Condition::all()
@@ -46,13 +62,20 @@ pub async fn fetch_runs_in_range(
         )
         .order_by_desc(iteration::Column::StartTime);
 
+    let count = query
+        .clone()
+        .count(db)
+        .await
+        .context("Error counting runs in range")?;
+
     let res = match page {
         Some(page) => query.paginate(db, page.size).fetch_page(page.num).await,
 
         _ => query.all(db).await,
-    };
+    }
+    .context("Error fetching all iterations")?;
 
-    res.context("Error fetching all iterations")
+    Ok((res, count))
 }
 
 pub async fn fetch_runs_last_n(
@@ -91,34 +114,34 @@ pub async fn fetch_runs_last_n(
     ))
 }
 
-pub async fn fetch_unique_run_ids(
-    scenario: &str,
-    db: &DatabaseConnection,
-) -> anyhow::Result<Vec<RunId>> {
-    let query = iteration::Entity::find()
-        .distinct_on([iteration::Column::RunId])
-        .filter(iteration::Column::ScenarioName.eq(scenario))
-        .order_by_desc(iteration::Column::StartTime)
-        .into_partial_model::<RunId>();
-
-    query.all(db).await.context("Error fetching unique run ids")
-}
-
-pub async fn fetch_by_scenario_and_run(
-    scenario: &str,
-    run_id: i32,
-    db: &DatabaseConnection,
-) -> anyhow::Result<Vec<iteration::Model>> {
-    let query = iteration::Entity::find()
-        .filter(
-            Condition::all()
-                .add(iteration::Column::ScenarioName.eq(scenario))
-                .add(iteration::Column::RunId.eq(run_id)),
-        )
-        .order_by_asc(iteration::Column::StartTime);
-
-    query
-        .all(db)
-        .await
-        .context("Error fetching iterations by scenario and run")
-}
+// pub async fn fetch_unique_run_ids(
+//     scenario: &str,
+//     db: &DatabaseConnection,
+// ) -> anyhow::Result<Vec<RunId>> {
+//     let query = iteration::Entity::find()
+//         .distinct_on([iteration::Column::RunId])
+//         .filter(iteration::Column::ScenarioName.eq(scenario))
+//         .order_by_desc(iteration::Column::StartTime)
+//         .into_partial_model::<RunId>();
+//
+//     query.all(db).await.context("Error fetching unique run ids")
+// }
+//
+// pub async fn fetch_by_scenario_and_run(
+//     scenario: &str,
+//     run_id: i32,
+//     db: &DatabaseConnection,
+// ) -> anyhow::Result<Vec<iteration::Model>> {
+//     let query = iteration::Entity::find()
+//         .filter(
+//             Condition::all()
+//                 .add(iteration::Column::ScenarioName.eq(scenario))
+//                 .add(iteration::Column::RunId.eq(run_id)),
+//         )
+//         .order_by_asc(iteration::Column::StartTime);
+//
+//     query
+//         .all(db)
+//         .await
+//         .context("Error fetching iterations by scenario and run")
+// }

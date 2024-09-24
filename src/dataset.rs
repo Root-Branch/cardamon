@@ -2,9 +2,9 @@ use crate::{
     dao::{self, pagination::Page},
     entities::{iteration, metrics},
 };
-use itertools::{Itertools, MinMaxResult};
+use itertools::Itertools;
 use sea_orm::DatabaseConnection;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::HashMap;
 
 pub enum ScenarioSelection {
     All,
@@ -210,7 +210,7 @@ impl<'a> DatasetRows<'a> {
     ///
     /// This function is async as it uses the dao_service to fetch the results from the db.
     pub async fn last_n_runs(&self, n: u64) -> anyhow::Result<Dataset> {
-        let scenarios = match &self.scenario_selection {
+        let (scenarios, total_scenarios) = match &self.scenario_selection {
             ScenarioSelection::All => dao::scenario::fetch_all(&self.scenario_page, self.db).await,
             ScenarioSelection::Search(name) => {
                 dao::scenario::fetch_by_name(name, &self.scenario_page, self.db).await
@@ -237,12 +237,15 @@ impl<'a> DatasetRows<'a> {
         for it in iterations {
             let metrics =
                 dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, self.db).await?;
-            iterations_with_metrics.push(IterationWithMetrics::new(it, metrics));
+            iterations_with_metrics.push(IterationMetrics::new(it, metrics));
         }
 
         // TODO: cache the iterations/metrics data
 
-        Ok(Dataset::new(iterations_with_metrics))
+        Ok(Dataset {
+            data: iterations_with_metrics,
+            total_scenarios,
+        })
     }
 }
 
@@ -290,7 +293,7 @@ impl<'a> DatasetColPager<'a> {
     pub async fn page(&self, page_size: u64, page_num: u64) -> anyhow::Result<Dataset> {
         let page = Page::new(page_size, page_num);
 
-        let iterations = match self.run_selection {
+        let (iterations, _total_runs) = match self.run_selection {
             RunSelection::All => {
                 dao::iteration::fetch_runs_all(&self.scenario, &Some(page), self.db).await
             }
@@ -307,13 +310,16 @@ impl<'a> DatasetColPager<'a> {
         for it in iterations {
             let metrics =
                 dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, self.db).await?;
-            iterations_with_metrics.push(IterationWithMetrics::new(it, metrics));
+            iterations_with_metrics.push(IterationMetrics::new(it, metrics));
         }
 
         // TODO: cache the iterations/metrics data
         //
 
-        Ok(Dataset::new(iterations_with_metrics))
+        Ok(Dataset {
+            data: iterations_with_metrics,
+            total_scenarios: 1,
+        })
     }
 }
 
@@ -323,11 +329,11 @@ impl<'a> DatasetColPager<'a> {
 
 /// Associates a single ScenarioIteration with all the metrics captured for it.
 #[derive(Debug)]
-pub struct IterationWithMetrics {
+pub struct IterationMetrics {
     iteration: iteration::Model,
     metrics: Vec<metrics::Model>,
 }
-impl IterationWithMetrics {
+impl IterationMetrics {
     pub fn new(iteration: iteration::Model, metrics: Vec<metrics::Model>) -> Self {
         Self { iteration, metrics }
     }
@@ -340,7 +346,7 @@ impl IterationWithMetrics {
         &self.metrics
     }
 
-    pub fn accumulate_by_process(&self) -> Vec<ProcessMetrics> {
+    pub fn by_process(&self) -> HashMap<String, Vec<&metrics::Model>> {
         let mut metrics_by_process: HashMap<String, Vec<&metrics::Model>> = HashMap::new();
         for metric in self.metrics.iter() {
             let proc_id = metric.process_id.clone();
@@ -351,46 +357,6 @@ impl IterationWithMetrics {
         }
 
         metrics_by_process
-            .into_iter()
-            .map(|(process_id, metrics)| {
-                let cpu_usage_minmax = metrics.iter().map(|m| m.cpu_usage).minmax();
-                let cpu_usage_total = metrics.iter().fold(0.0, |acc, m| acc + m.cpu_usage);
-                let cpu_usage_mean = cpu_usage_total / metrics.len() as f64;
-
-                ProcessMetrics {
-                    process_id,
-                    cpu_usage_minmax,
-                    cpu_usage_mean,
-                    cpu_usage_total,
-                }
-            })
-            .collect()
-    }
-}
-
-/// Read-only struct containing metrics for a single process.
-#[derive(Debug)]
-pub struct ProcessMetrics {
-    process_id: String,
-    cpu_usage_minmax: MinMaxResult<f64>,
-    cpu_usage_mean: f64,
-    cpu_usage_total: f64,
-}
-impl ProcessMetrics {
-    pub fn process_id(&self) -> &str {
-        &self.process_id
-    }
-
-    pub fn cpu_usage_minmax(&self) -> &MinMaxResult<f64> {
-        &self.cpu_usage_minmax
-    }
-
-    pub fn cpu_usage_mean(&self) -> f64 {
-        self.cpu_usage_mean
-    }
-
-    pub fn cpu_usage_total(&self) -> f64 {
-        self.cpu_usage_total
     }
 }
 
@@ -416,14 +382,18 @@ impl ProcessMetrics {
 ///  ================================================================================
 ///
 pub struct Dataset {
-    data: Vec<IterationWithMetrics>,
+    data: Vec<IterationMetrics>,
+    pub total_scenarios: u64,
 }
 impl<'a> Dataset {
-    pub fn new(data: Vec<IterationWithMetrics>) -> Self {
-        Self { data }
+    pub fn new(data: Vec<IterationMetrics>, total_scenarios: u64) -> Self {
+        Self {
+            data,
+            total_scenarios,
+        }
     }
 
-    pub fn data(&'a self) -> &'a [IterationWithMetrics] {
+    pub fn data(&'a self) -> &'a [IterationMetrics] {
         &self.data
     }
 
@@ -452,56 +422,6 @@ impl<'a> Dataset {
             })
             .collect::<Vec<_>>()
     }
-    /// Returns the total number of unique scenarios in the dataset
-    pub fn total_unique_scenarios(&self) -> usize {
-        self.data
-            .iter()
-            .map(|x| &x.iteration.scenario_name)
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-    }
-    /// Returns a paginated list of unique scenarios
-    pub fn paginated_unique_scenarios(&self, page: u32, limit: u32) -> Vec<String> {
-        let unique_scenarios: Vec<String> = self
-            .data
-            .iter()
-            .map(|x| x.iteration.scenario_name.clone())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        let total_items = unique_scenarios.len();
-        let start = (page * limit) as usize;
-
-        if start >= total_items {
-            return Vec::new(); // Return an empty vector if start index is out of bounds
-        }
-
-        let end = std::cmp::min(start + limit as usize, total_items);
-        unique_scenarios[start..end].to_vec()
-    }
-
-    /// Returns the last N runs for a specific scenario
-    pub fn last_n_runs_for_scenario(
-        &self,
-        scenario_name: &str,
-        n: usize,
-    ) -> Vec<&IterationWithMetrics> {
-        self.data
-            .iter()
-            .filter(|x| x.iteration.scenario_name == scenario_name)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .take(n)
-            .collect()
-    }
-
-    /// Returns the total number of pages given a limit per page
-    pub fn total_pages(&self, limit: u32) -> u32 {
-        let total_scenarios = self.total_unique_scenarios() as u32;
-        (total_scenarios as f64 / limit as f64).ceil() as u32
-    }
 }
 
 /// Dataset containing data associated with a single scenario but potentially containing data
@@ -511,21 +431,23 @@ impl<'a> Dataset {
 #[derive(Debug)]
 pub struct ScenarioDataset<'a> {
     scenario_name: &'a str,
-    data: Vec<&'a IterationWithMetrics>,
+    data: Vec<&'a IterationMetrics>,
 }
 impl<'a> ScenarioDataset<'a> {
     pub fn scenario_name(&'a self) -> &'a str {
         self.scenario_name
     }
 
-    pub fn data(&'a self) -> &'a [&'a IterationWithMetrics] {
+    pub fn data(&'a self) -> &'a [&'a IterationMetrics] {
         &self.data
     }
 
-    pub fn by_run(&'a self) -> Vec<RunDataset<'a>> {
+    pub fn by_run(&'a self) -> Vec<ScenarioRunDataset<'a>> {
         let runs = self
             .data
             .iter()
+            // TODO: Check that this is ascending order
+            .sorted_by(|a, b| b.iteration.count.cmp(&a.iteration.count))
             .map(|x| &x.iteration.run_id)
             .unique()
             .collect::<Vec<_>>();
@@ -539,7 +461,7 @@ impl<'a> ScenarioDataset<'a> {
                     .cloned()
                     .collect::<Vec<_>>();
 
-                RunDataset {
+                ScenarioRunDataset {
                     scenario_name: self.scenario_name,
                     run_id: *run_id,
                     data,
@@ -554,12 +476,12 @@ impl<'a> ScenarioDataset<'a> {
 ///
 /// Guarenteed to contain only data associated with a single scenario and cardamon run.
 #[derive(Debug)]
-pub struct RunDataset<'a> {
+pub struct ScenarioRunDataset<'a> {
     scenario_name: &'a str,
     run_id: i32,
-    data: Vec<&'a IterationWithMetrics>,
+    data: Vec<&'a IterationMetrics>,
 }
-impl<'a> RunDataset<'a> {
+impl<'a> ScenarioRunDataset<'a> {
     pub fn scenario_name(&'a self) -> &'a str {
         self.scenario_name
     }
@@ -568,67 +490,12 @@ impl<'a> RunDataset<'a> {
         self.run_id
     }
 
-    pub fn by_iterations(&'a self) -> &'a [&'a IterationWithMetrics] {
+    pub fn by_iteration(&'a self) -> ScenarioRunIterationDataset {
         &self.data
     }
-
-    pub fn averaged(&'a self) -> Vec<ProcessMetrics> {
-        let all_process_metrics = self
-            .data
-            .iter()
-            .flat_map(|i| i.accumulate_by_process())
-            .collect::<Vec<_>>();
-
-        let mut process_metrics_to_iterations: HashMap<String, Vec<ProcessMetrics>> =
-            HashMap::new();
-        for process_metrics in all_process_metrics.into_iter() {
-            let proc_id = process_metrics.process_id.clone();
-            let entry = process_metrics_to_iterations.entry(proc_id);
-            match entry {
-                Entry::Occupied(_) => {
-                    entry.and_modify(|v| v.push(process_metrics));
-                }
-                Entry::Vacant(_) => {
-                    entry.or_insert(vec![process_metrics]);
-                }
-            }
-        }
-
-        // average across iterations
-        process_metrics_to_iterations
-            .into_iter()
-            .flat_map(|(_, process_metrics)| {
-                process_metrics.into_iter().reduce(|a, b| {
-                    let a_minmax = match a.cpu_usage_minmax {
-                        MinMaxResult::NoElements => None,
-                        MinMaxResult::OneElement(val) => Some((val, val)),
-                        MinMaxResult::MinMax(min, max) => Some((min, max)),
-                    };
-                    let b_minmax = match b.cpu_usage_minmax {
-                        MinMaxResult::NoElements => None,
-                        MinMaxResult::OneElement(val) => Some((val, val)),
-                        MinMaxResult::MinMax(min, max) => Some((min, max)),
-                    };
-
-                    let cpu_usage_minmax = if a_minmax.is_some() && b_minmax.is_some() {
-                        let (a_min, a_max) = a_minmax.unwrap();
-                        let (b_min, b_max) = b_minmax.unwrap();
-                        MinMaxResult::MinMax(a_min + b_min / 2.0, a_max + b_max / 2.0)
-                    } else {
-                        MinMaxResult::NoElements
-                    };
-
-                    ProcessMetrics {
-                        process_id: a.process_id,
-                        cpu_usage_minmax,
-                        cpu_usage_mean: a.cpu_usage_mean + b.cpu_usage_mean / 2.0,
-                        cpu_usage_total: a.cpu_usage_total + b.cpu_usage_total / 2.0,
-                    }
-                })
-            })
-            .collect::<Vec<_>>()
-    }
 }
+
+type ScenarioRunIterationDataset<'a> = &'a [&'a IterationMetrics];
 
 #[cfg(test)]
 mod tests {

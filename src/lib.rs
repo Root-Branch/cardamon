@@ -5,6 +5,7 @@ pub mod entities;
 pub mod metrics;
 pub mod metrics_logger;
 pub mod migrations;
+pub mod models;
 pub mod server;
 
 use crate::config::Config;

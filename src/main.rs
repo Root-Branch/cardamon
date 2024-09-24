@@ -175,9 +175,9 @@ async fn main() -> anyhow::Result<()> {
                 for run_dataset in scenario_dataset.by_run().iter() {
                     println!("Run: {:?}", run_dataset.run_id());
 
-                    for avged_dataset in run_dataset.averaged().iter() {
-                        println!("\t{:?}", avged_dataset);
-                    }
+                    // for avged_dataset in run_dataset.averaged().iter() {
+                    //     println!("\t{:?}", avged_dataset);
+                    // }
                 }
             }
         }
