@@ -3,7 +3,7 @@ pub mod dataset_builder;
 
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Data {
     pub pow: f64,
     pub co2: f64,

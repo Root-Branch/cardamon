@@ -3,11 +3,18 @@ use crate::{
     data::Data,
     entities::{iteration::Model as Iteration, metrics::Model as Metrics},
 };
+use anyhow::Context;
 use itertools::Itertools;
 use sea_orm::DatabaseConnection;
 use std::collections::HashMap;
 
 use super::{ProcessData, RunData, ScenarioData};
+
+pub enum AggregationMethod {
+    MostRecent,
+    Average,
+    Sum,
+}
 
 /// Associates a single ScenarioIteration with all the metrics captured for it.
 #[derive(Debug)]
@@ -166,6 +173,7 @@ impl<'a> ScenarioDataset<'a> {
         &'a self,
         db: &DatabaseConnection,
         model: &impl Fn(Vec<&Metrics>, f32) -> Data,
+        aggregation_method: AggregationMethod,
     ) -> anyhow::Result<ScenarioData> {
         let mut all_run_data = vec![];
         for scenario_run_dataset in self.by_run() {
@@ -173,12 +181,24 @@ impl<'a> ScenarioDataset<'a> {
             all_run_data.push(run_data);
         }
 
-        let data = Data::sum(
-            &all_run_data
-                .iter()
-                .map(|run_data| &run_data.data)
-                .collect_vec(),
-        );
+        // use the aggregation method to calculate the data for this scenario
+        let data = match aggregation_method {
+            AggregationMethod::MostRecent => all_run_data.first().context("no data!")?.data.clone(),
+
+            AggregationMethod::Average => Data::mean(
+                &all_run_data
+                    .iter()
+                    .map(|run_data| &run_data.data)
+                    .collect_vec(),
+            ),
+
+            AggregationMethod::Sum => Data::sum(
+                &all_run_data
+                    .iter()
+                    .map(|run_data| &run_data.data)
+                    .collect_vec(),
+            ),
+        };
 
         // calculate trend
         let mut delta_sum = 0_f64;
