@@ -198,24 +198,6 @@ Start the UI server.
 
 - **\*port**: The port to listen on\*
 
-**DATABASE_URL**
-Connection string to the database
-
-examples:
-`sqlite://cardamon.db?mode=rwc` (rwc required to create db file if it doesn't exist)
-`postgresql://postgres@localhost:5432` (don't include db name for postgres or mysql)
-
-**DATABASE_NAME**
-only required for postgres and mysql
-
-### Migrations
-
-`cargo run --bin migrator -- <COMMAND>`
-
-### Generating Entities
-
-`sea-orm-cli generate entity -o src/entities`
-
 ## FAQ
 
 ### Can I use Cardamon on my own project or at my work?
