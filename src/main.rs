@@ -177,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
                 let run_datasets = scenario_dataset.by_run();
 
                 // execute model for current run
-                let f = rab_linear_model(0.12);
+                let f = rab_linear_model(0.16);
                 let (head, tail) = run_datasets
                     .split_first()
                     .expect("Dataset does not include recent run.");
@@ -251,7 +251,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("\nno data found!");
             }
 
-            let f = rab_linear_model(0.12);
+            let f = rab_linear_model(0.16);
             for scenario_dataset in dataset.by_scenario(LiveDataFilter::ExcludeLive) {
                 println!(
                     "{}:",
