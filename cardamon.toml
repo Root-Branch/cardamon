@@ -1,6 +1,6 @@
-[computer]
-cpu_name = "AMD Ryzen 7 PRO 6850U with Radeon Graphics"
-cpu_avg_power = 11.223
+[cpu]
+name = "AMD Ryzen 7 PRO 6850U with Radeon Graphics"
+avg_power = 11.223
 
 # Processes
 # ---------
@@ -50,7 +50,7 @@ cpu_avg_power = 11.223
 #
 # EXAMPLE
 # -------
-# [[processes]]
+# [[process]]
 # name = "db"
 # up = "docker compose up -d"
 # down = "docker compose down"
@@ -58,10 +58,10 @@ cpu_avg_power = 11.223
 # process.type = "docker"
 # process.containers = ["postgres"]
 
-[[processes]]
+[[process]]
 name = "test_proc"
 up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
-down = "pkill {pid}"
+down = "kill {pid}"
 redirect.to = "file"
 process.type = "baremetal"
 
@@ -102,7 +102,7 @@ process.type = "baremetal"
 #            this scenario.
 #     required - true
 #
-[[scenarios]]
+[[scenario]]
 name = "sleep"
 desc = "Sleeps for 10 seconds, a real scenario would call your app"
 command = "sleep 10"
@@ -121,10 +121,23 @@ processes = ["test_proc"]
 #     desc - a unique name
 #     required - true
 #
-#   scenarios:
+#   observe.scenarios:
 #     type - string[]
-#     desc - a list of scenarios to execute
-#     required - true
-[[observations]]
+#     desc - a list of scenarios to execute whilst observing the processes 
+#            required to run all scenarios
+#     required - required if observe.processes is not defined
+#
+#   observe.processes:
+#     type - string[]
+#     desc - a list of processes to execute and observe. Running an observation
+#            with this property set runs Cardamon in Live mode.
+#     required - required if observe.scenarios is not defined.
+#
+[[observation]]
 name = "test_obs"
 scenarios = ["sleep"]
+
+[[observation]]
+name = "live_monitor"
+processes = ["test_proc"]
+

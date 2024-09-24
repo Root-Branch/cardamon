@@ -1,4 +1,7 @@
-use crate::metrics::{CpuMetrics, MetricsLog};
+use crate::{
+    config::ProcessToObserve,
+    metrics::{CpuMetrics, MetricsLog},
+};
 use chrono::Utc;
 use std::{
     ops::Deref,
@@ -24,29 +27,42 @@ use tokio::time::Duration;
 /// # Returns
 ///
 /// This function does not return, it requires that it's thread is cancelled.
-pub async fn keep_logging(pids: Vec<u32>, metrics_log: Arc<Mutex<MetricsLog>>) {
+pub async fn keep_logging(
+    processes_to_observe: Vec<ProcessToObserve>,
+    metrics_log: Arc<Mutex<MetricsLog>>,
+) -> anyhow::Result<()> {
     let mut system = System::new_all();
 
     loop {
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        for pid in pids.iter() {
-            let metrics = get_metrics(&mut system, *pid).await;
-            update_metrics_log(metrics, &metrics_log);
+        for process_to_observe in processes_to_observe.iter() {
+            match process_to_observe {
+                ProcessToObserve::ExternalPid(pid) => {
+                    let metrics = get_metrics(&mut system, *pid).await?;
+                    update_metrics_log(metrics, &metrics_log);
+                }
+
+                ProcessToObserve::ManagedPid {
+                    process_name,
+                    pid,
+                    down: _,
+                } => {
+                    let mut metrics = get_metrics(&mut system, *pid).await?;
+                    metrics.process_name = process_name.clone();
+                    update_metrics_log(metrics, &metrics_log);
+                }
+
+                _ => panic!(),
+            }
         }
     }
 }
 
-fn update_metrics_log(metrics: anyhow::Result<CpuMetrics>, metrics_log: &Arc<Mutex<MetricsLog>>) {
-    match metrics {
-        Ok(metrics) => metrics_log
-            .lock()
-            .expect("Should be able to acquire lock on metrics log")
-            .push_metrics(metrics),
-        Err(error) => metrics_log
-            .lock()
-            .expect("Should be able to acquire lock on metrics err")
-            .push_error(error),
-    }
+fn update_metrics_log(metrics: CpuMetrics, metrics_log: &Arc<Mutex<MetricsLog>>) {
+    metrics_log
+        .lock()
+        .expect("Should be able to acquire lock on metrics log")
+        .push_metrics(metrics);
 }
 
 async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics> {
@@ -189,7 +205,6 @@ mod tests {
         let cpu_usage = metrics_log.iter().fold(0_f64, |acc, metrics| {
             acc + metrics.cpu_usage / metrics.core_count as f64
         }) / iterations as f64;
-        println!("{cpu_usage}");
         assert!(cpu_usage > 0_f64);
 
         Ok(())

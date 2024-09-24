@@ -59,7 +59,7 @@ Alternatively you can build Cardamon from source if you have `cargo` installed.
 
 # Environment Variables
 
-By default, Cardamon saves your data to a locally stored SQLite database. If you would like to store Cardamon data in any other location then you can set the following environment variables.   
+By default, Cardamon saves your data to a locally stored SQLite database. If you would like to store Cardamon data in any other location then you can set the following environment variables.  
 **DATABASE_URL**
 
 (omit database name from URL when using postgresql or mysql, use DATABASE_NAME instead)
@@ -86,7 +86,7 @@ avg_power = 11.223
 
 ### Processes
 
-Processes are the things you would like cardamon to start/stop and measure during a run. Currently only executables and docker containers are supported but podman and kubernetes are planned. You can specify as many processes as you like. Below is an example process: 
+Processes are the things you would like cardamon to start/stop and measure during a run. Currently only executables and docker containers are supported but podman and kubernetes are planned. You can specify as many processes as you like. Below is an example process:
 
 ```toml
 [[process]]
@@ -140,7 +140,7 @@ processes = ["test_proc"]
 
 ### Observations
 
-An observation is how we take a 'measurement'. Observations can be run in two modes. As a live monitor, where you specify processes to measure. Or as a scenario runner, where you specify scenarios to run. 
+An observation is how we take a 'measurement'. Observations can be run in two modes. As a live monitor, where you specify processes to measure. Or as a scenario runner, where you specify scenarios to run.
 
 ```toml
 [[observation]]
@@ -170,11 +170,12 @@ Produces a new cardamon.toml file.
 
 Runs a single observation.
 
-***Options***
-- ***name**: The name of the observation you would like to run*
-- ***pids**: A comma separated list of PIDs started externally to cardamon that you would like cardamon to measure*
-- ***containers**: A comma separated list of container names, started externally to cardamon, that you would like cardamon to measure*
-- ***external_only**: If set, cardamon will not try to start any processes and will instead only measure the pids specified by the `pids` and `containers` option*
+**_Options_**
+
+- **\*name**: The name of the observation you would like to run\*
+- **\*pids**: A comma separated list of PIDs started externally to cardamon that you would like cardamon to measure\*
+- **\*containers**: A comma separated list of container names, started externally to cardamon, that you would like cardamon to measure\*
+- **\*external_only**: If set, cardamon will not try to start any processes and will instead only measure the pids specified by the `pids` and `containers` option\*
 
 ### Stats
 
@@ -182,9 +183,10 @@ Runs a single observation.
 
 Shows the stats for previous runs of scenarios.
 
-***Options***
-- ***scenario_name**: An optional argument for the scenario you want to show stats for*
-- ***previous_runs**: The number of previous runs to show*
+**_Options_**
+
+- **\*scenario_name**: An optional argument for the scenario you want to show stats for\*
+- **\*previous_runs**: The number of previous runs to show\*
 
 ### Ui
 
@@ -192,14 +194,15 @@ Shows the stats for previous runs of scenarios.
 
 Start the UI server.
 
-***Options***
-- ***port**: The port to listen on*
+**_Options_**
 
-# FAQ
+- **\*port**: The port to listen on\*
+
+## FAQ
 
 ### Can I use Cardamon on my own project or at my work?
 
-> Cardamon is released under the PolyForm Shield License 1.0. Anyone can use Cardamon in-house to build their own software, including commercially. 
+> Cardamon is released under the PolyForm Shield License 1.0. Anyone can use Cardamon in-house to build their own software, including commercially.
 > If you want to use Cardamon to offer a competing service to Root & Branch (e.g. instrument another company's software) then you will need permission, please get in touch. We have lots of green software industry friends who are able to use Cardamon.
 
 ### I'd like to use Cardamon to measure the power consumption of my software, but I don't know how

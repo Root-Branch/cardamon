@@ -1,14 +1,13 @@
 mod errors;
 mod routes;
-mod types;
 
 use anyhow::Context;
 use axum::response::{Html, IntoResponse, Response};
 use axum::{http::header, routing::get, Router};
+use colored::Colorize;
 use http::{StatusCode, Uri};
 use rust_embed::Embed;
 use sea_orm::DatabaseConnection;
-use tracing::info;
 
 #[derive(Embed, Clone)]
 #[folder = "src/public"]
@@ -66,10 +65,10 @@ async fn create_app(db: &DatabaseConnection) -> Router {
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
     Router::new()
-        .route("/api/scenarios", get(routes::get_scenarios))
-        .route("/api/scenarios/:scenario_id", get(routes::get_scenario))
         .route("/", get(index_handler))
         .route("/index.html", get(index_handler))
+        .route("/api/scenarios", get(routes::get_scenarios))
+        .route("/api/runs/:scenario_name", get(routes::get_runs))
         .route("/*file", get(static_handler))
         .fallback_service(get(not_found))
         .with_state(db.clone())
@@ -86,10 +85,11 @@ async fn create_app(db: &DatabaseConnection) -> Router {
 pub async fn start(port: u32, db: &DatabaseConnection) -> anyhow::Result<()> {
     let app = create_app(db).await;
 
-    let listener = tokio::net::TcpListener::bind(format!("localhost:{}", port))
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .unwrap();
 
-    info!("Starting cardamon server on 0.0.0.0:{}", port);
+    println!("\n{}", " Cardamon UI ".reversed().green());
+    println!("> Server started: visit http://localhost:{}", port);
     axum::serve(listener, app).await.context("Error serving UI")
 }

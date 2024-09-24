@@ -2,6 +2,7 @@ use anyhow::Context;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     fs::{self, File},
     io::{Read, Write},
 };
@@ -16,12 +17,17 @@ static LINE_ENDING: &str = "\n";
 #[cfg(windows)]
 static LINE_ENDING: &str = "\r\n";
 
+// ******** ******** ********
+// **    CONFIGURATION     **
+// ******** ******** ********
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
-    pub metrics_server_url: Option<String>,
-    pub computer: Computer,
-    pub processes: Vec<ProcessToExecute>,
+    pub cpu: Cpu,
+    #[serde(rename(serialize = "process", deserialize = "process"))]
+    pub processes: Vec<Process>,
+    #[serde(rename(serialize = "scenario", deserialize = "scenario"))]
     pub scenarios: Vec<Scenario>,
+    #[serde(rename(serialize = "observation", deserialize = "observation"))]
     pub observations: Vec<Observation>,
 }
 impl Config {
@@ -35,9 +41,9 @@ impl Config {
 
         // add a line at the top of the file containing the new tdp
         let mut new_conf_lines = vec![
-            "[computer]".to_string(),
-            format!("cpu_name = \"{}\"", cpu_name),
-            format!("cpu_avg_power = {}", cpu_avg_power),
+            "[cpu]".to_string(),
+            format!("name = \"{}\"", cpu_name),
+            format!("avg_power = {}", cpu_avg_power),
             "".to_string(),
         ];
         new_conf_lines.append(&mut lines);
@@ -59,16 +65,30 @@ impl Config {
         toml::from_str::<Config>(conf_str).map_err(|e| anyhow::anyhow!("TOML parsing error: {}", e))
     }
 
-    fn find_observation(&self, observation_name: &str) -> Option<&Observation> {
-        self.observations
-            .iter()
-            .find(|obs| obs.name == observation_name)
+    fn find_observation(&self, obs_name: &str) -> Option<&Observation> {
+        self.observations.iter().find(|obs| match obs {
+            Observation::LiveMonitor { name, processes: _ } => name == obs_name,
+            Observation::ScenarioRunner { name, scenarios: _ } => name == obs_name,
+        })
     }
 
-    fn find_scenario(&self, scenario_name: &str) -> Option<&Scenario> {
+    pub fn find_scenario(&self, scenario_name: &str) -> anyhow::Result<&Scenario> {
         self.scenarios
             .iter()
             .find(|scenario| scenario.name == scenario_name)
+            .context(format!(
+                "Unable to find scenario with name {}",
+                scenario_name
+            ))
+    }
+
+    pub fn find_scenarios(&self, scenario_names: &[&String]) -> anyhow::Result<Vec<&Scenario>> {
+        let mut scenarios = vec![];
+        for scenario_name in scenario_names {
+            let scenario = self.find_scenario(&scenario_name)?;
+            scenarios.push(scenario);
+        }
+        Ok(scenarios)
     }
 
     /// Finds a process in the config with the given name.
@@ -78,97 +98,75 @@ impl Config {
     ///
     /// # Returns
     /// Some process if it can be found, None otherwise
-    fn find_process(&self, proc_name: &str) -> Option<&ProcessToExecute> {
-        self.processes.iter().find(|proc| proc.name == proc_name)
+    fn find_process(&self, proc_name: &str) -> anyhow::Result<&Process> {
+        self.processes
+            .iter()
+            .find(|proc| proc.name == proc_name)
+            .context(format!("Unable to find process with name {}", proc_name))
     }
 
-    /// Finds the intersection of processes across all the given scenarios.
-    ///
-    /// # Arguments
-    ///
-    /// * scenarios_to_execute - the scenarios which are going to be executed.
-    ///
-    /// # Returns
-    ///
-    /// A vector containing the intersection of processes required to run all the scenarios in the
-    /// observation.
-    fn collect_processes(
-        &self,
-        scenarios_to_execute: &[ScenarioToExecute],
-    ) -> anyhow::Result<Vec<&ProcessToExecute>> {
-        let mut proc_set = std::collections::hash_set::HashSet::new();
-        for scenario_to_exec in scenarios_to_execute.iter() {
-            proc_set.extend(scenario_to_exec.scenario.processes.iter());
-        }
-
+    fn find_processes(&self, proc_names: &[&String]) -> anyhow::Result<Vec<&Process>> {
         let mut processes = vec![];
-        for proc_name in proc_set {
-            let proc = self
-                .find_process(proc_name)
-                .context(format!("Unable to find process with name: {proc_name}"))?;
+        for proc_name in proc_names {
+            let proc = self.find_process(&proc_name)?;
             processes.push(proc);
         }
-
         Ok(processes)
     }
 
-    fn collect_scenarios_to_execute(&self, name: &str) -> anyhow::Result<Vec<ScenarioToExecute>> {
-        let mut scenarios = vec![];
+    pub fn create_execution_plan(
+        &self,
+        obs_name: &str,
+        external_only: bool,
+    ) -> anyhow::Result<ExecutionPlan> {
+        let obs = self.find_observation(obs_name).context(format!(
+            "Couldn't find an observation with name {}",
+            obs_name
+        ))?;
 
-        let obs = self.find_observation(name);
-        if let Some(obs) = obs {
-            // if there is an observation with the given name then get all the scenarios associated
-            // with that observation.
-            for scenario_name in obs.scenarios.iter() {
-                let scenario = self.find_scenario(scenario_name).context(format!(
-                    "Unable to find scenario with name: {scenario_name}"
-                ))?;
-                scenarios.push(scenario);
+        let mut processes_to_execute = vec![];
+
+        let exec_plan = match &obs {
+            Observation::ScenarioRunner { name: _, scenarios } => {
+                let scenario_names = scenarios.iter().collect_vec();
+                let scenarios = self.find_scenarios(&scenario_names)?;
+
+                // find the intersection of processes between all the scenarios
+                if !external_only {
+                    let mut proc_set: HashSet<String> = HashSet::new();
+                    for scenario_name in scenario_names {
+                        let scenario = self.find_scenario(&scenario_name).context(format!(
+                            "Unable to find scenario with name {}",
+                            scenario_name
+                        ))?;
+                        for proc_name in &scenario.processes {
+                            proc_set.insert(proc_name.clone());
+                        }
+                    }
+
+                    let proc_names = proc_set.iter().collect_vec();
+                    processes_to_execute = self.find_processes(&proc_names)?;
+                }
+                ExecutionPlan::new(processes_to_execute, ExecutionMode::Observation(scenarios))
             }
-        } else {
-            // if there isn't an observation with the given name then try to find a single scenario
-            // with the name instead.
-            let scenario = self.find_scenario(name).context(format!(
-                "Unable to find observation or scenario with name: {}",
-                name
-            ))?;
-            scenarios.push(scenario);
-        }
 
-        let mut scenarios_to_execute = vec![];
-        for scenario in scenarios {
-            scenarios_to_execute.append(&mut scenario.build_scenarios_to_execute());
-        }
+            Observation::LiveMonitor { name: _, processes } => {
+                if !external_only {
+                    let proc_names = processes.iter().collect_vec();
+                    processes_to_execute = self.find_processes(&proc_names)?;
+                }
+                ExecutionPlan::new(processes_to_execute, ExecutionMode::Live)
+            }
+        };
 
-        Ok(scenarios_to_execute)
-    }
-
-    pub fn create_execution_plan(&self, name: &str) -> anyhow::Result<ExecutionPlan> {
-        let scenarios_to_execute = self.collect_scenarios_to_execute(name)?;
-        let processes_to_execute = self.collect_processes(&scenarios_to_execute)?;
-
-        Ok(ExecutionPlan {
-            processes_to_execute,
-            scenarios_to_execute,
-            external_processes_to_observe: vec![],
-        })
-    }
-
-    pub fn create_execution_plan_external_only(&self, name: &str) -> anyhow::Result<ExecutionPlan> {
-        let scenarios_to_execute = self.collect_scenarios_to_execute(name)?;
-
-        Ok(ExecutionPlan {
-            processes_to_execute: vec![],
-            scenarios_to_execute,
-            external_processes_to_observe: vec![],
-        })
+        Ok(exec_plan)
     }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
-pub struct Computer {
-    pub cpu_name: String,
-    pub cpu_avg_power: f64,
+pub struct Cpu {
+    pub name: String,
+    pub avg_power: f32,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone, Copy, Serialize)]
@@ -180,25 +178,6 @@ pub enum Redirect {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
-pub struct Scenario {
-    pub name: String,
-    pub desc: String,
-    pub command: String,
-    pub iterations: i32,
-    pub processes: Vec<String>,
-}
-impl Scenario {
-    fn build_scenarios_to_execute(&self) -> Vec<ScenarioToExecute> {
-        let mut scenarios_to_execute = vec![];
-        for i in 0..self.iterations {
-            let scenario_to_exec = ScenarioToExecute::new(self, i);
-            scenarios_to_execute.push(scenario_to_exec);
-        }
-        scenarios_to_execute
-    }
-}
-
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ProcessType {
     BareMetal,
@@ -206,52 +185,86 @@ pub enum ProcessType {
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
-pub struct ProcessToExecute {
+pub struct Process {
     pub name: String,
     pub up: String,
     pub down: Option<String>,
     pub redirect: Option<Redirect>,
-    pub process: ProcessType,
+    #[serde(rename = "process")]
+    pub process_type: ProcessType,
 }
 
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+pub struct Scenario {
+    pub name: String,
+    pub desc: String,
+    pub command: String,
+    pub iterations: i32,
+    pub processes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Observation {
+    LiveMonitor {
+        name: String,
+        processes: Vec<String>,
+    },
+    ScenarioRunner {
+        name: String,
+        scenarios: Vec<String>,
+    },
+}
+
+// #[derive(Debug, Deserialize, Serialize)]
+// pub struct Observation {
+//     pub name: String,
+//     #[serde(rename = "observe")]
+//     pub observation_mode: ObservationMode,
+// }
+
+// ******** ******** ********
+// **    EXECUTION PLAN    **
+// ******** ******** ********
 #[derive(Debug, Clone)]
 pub enum ProcessToObserve {
-    Pid(Option<String>, u32),
-    ContainerName(String),
+    ExternalPid(u32),
+    ExternalContainers(Vec<String>),
+
+    /// ManagedPid represents a baremetal processes started by Cardamon
+    ManagedPid {
+        process_name: String,
+        pid: u32,
+        down: Option<String>,
+    },
+
+    /// ManagedContainers represents a docker processes started by Cardamon
+    ManagedContainers {
+        process_name: String,
+        container_names: Vec<String>,
+        down: Option<String>,
+    },
 }
 
 #[derive(Debug)]
-pub struct ScenarioToExecute<'a> {
-    pub scenario: &'a Scenario,
-    pub iteration: i32,
-}
-impl<'a> ScenarioToExecute<'a> {
-    fn new(scenario: &'a Scenario, iteration: i32) -> Self {
-        Self {
-            scenario,
-            iteration,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Observation {
-    pub name: String,
-    pub scenarios: Vec<String>,
+pub enum ExecutionMode<'a> {
+    Live,
+    Observation(Vec<&'a Scenario>),
 }
 
 #[derive(Debug)]
 pub struct ExecutionPlan<'a> {
-    pub processes_to_execute: Vec<&'a ProcessToExecute>,
-    pub scenarios_to_execute: Vec<ScenarioToExecute<'a>>,
-    pub external_processes_to_observe: Vec<ProcessToObserve>,
+    pub external_processes_to_observe: Option<Vec<ProcessToObserve>>,
+    pub processes_to_execute: Vec<&'a Process>,
+    pub execution_mode: ExecutionMode<'a>,
 }
 impl<'a> ExecutionPlan<'a> {
-    pub fn scenario_names(&self) -> Vec<&str> {
-        self.scenarios_to_execute
-            .iter()
-            .map(|x| x.scenario.name.as_str())
-            .collect()
+    pub fn new(processes_to_execute: Vec<&'a Process>, execution_mode: ExecutionMode<'a>) -> Self {
+        ExecutionPlan {
+            external_processes_to_observe: None,
+            processes_to_execute,
+            execution_mode,
+        }
     }
 
     /// Adds a process that has not been started by Cardamon to this execution plan for observation.
@@ -259,7 +272,13 @@ impl<'a> ExecutionPlan<'a> {
     /// # Arguments
     /// * process_to_observe - A process which has been started externally to Cardamon.
     pub fn observe_external_process(&mut self, process_to_observe: ProcessToObserve) {
-        self.external_processes_to_observe.push(process_to_observe);
+        match &mut self.external_processes_to_observe {
+            None => self.external_processes_to_observe = Some(vec![process_to_observe]),
+            Some(vec) => {
+                vec.push(process_to_observe);
+                Some(vec);
+            }
+        };
     }
 }
 
@@ -272,11 +291,7 @@ mod tests {
 
     #[test]
     fn can_load_config_file() -> anyhow::Result<()> {
-        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.success.toml"))?;
-        assert_eq!(
-            cfg.metrics_server_url,
-            Some("http://cardamon.rootandbranch.io".to_string())
-        );
+        Config::try_from_path(Path::new("./fixtures/cardamon.success.toml"))?;
         Ok(())
     }
 
@@ -296,10 +311,10 @@ mod tests {
     fn can_find_scenario_by_name() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
         let scenario = cfg.find_scenario("user_signup");
-        assert!(scenario.is_some());
+        assert!(scenario.is_ok());
 
         let scenario = cfg.find_scenario("nope");
-        assert!(scenario.is_none());
+        assert!(scenario.is_err());
 
         Ok(())
     }
@@ -308,105 +323,99 @@ mod tests {
     fn can_find_process_by_name() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.success.toml"))?;
         let process = cfg.find_process("server");
-        assert!(process.is_some());
+        assert!(process.is_ok());
 
         let process = cfg.find_process("nope");
-        assert!(process.is_none());
+        assert!(process.is_err());
 
         Ok(())
     }
 
-    #[test]
-    fn collecting_processes_works() -> anyhow::Result<()> {
-        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
-        let scenario1 = cfg
-            .find_scenario("user_signup")
-            .unwrap()
-            .build_scenarios_to_execute();
-        let scenario2 = cfg
-            .find_scenario("basket_10")
-            .unwrap()
-            .build_scenarios_to_execute();
+    // #[test]
+    // fn collecting_processes_works() -> anyhow::Result<()> {
+    //     let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
+    //
+    //     let obs_name = "test_app";
+    //     let obs = cfg.find_observation(obs_name).context("")?;
+    //
+    //     let process_names = cfg
+    //         .collect_processes(obs.)?
+    //         .into_iter()
+    //         .map(|proc_to_exec| match proc_to_exec.process.process_type {
+    //             ProcessType::BareMetal => proc_to_exec.process.name.as_str(),
+    //             ProcessType::Docker { containers: _ } => proc_to_exec.process.name.as_str(),
+    //         })
+    //         .sorted()
+    //         .collect::<Vec<_>>();
+    //
+    //     assert_eq!(process_names, ["db", "mailgun", "server"]);
+    //
+    //     Ok(())
+    // }
 
-        let scenarios_to_execute = vec![scenario1, scenario2]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let process_names = cfg
-            .collect_processes(&scenarios_to_execute)?
-            .into_iter()
-            .map(|proc| match proc.process {
-                ProcessType::BareMetal => proc.name.as_str(),
-                ProcessType::Docker { containers: _ } => proc.name.as_str(),
-            })
-            .sorted()
-            .collect::<Vec<_>>();
-
-        assert_eq!(process_names, ["db", "mailgun", "server"]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
-        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
-        let scenario = cfg
-            .find_scenario("basket_10")
-            .expect("scenario 'basket_10' should exist!");
-        let scenarios_to_execute = scenario.build_scenarios_to_execute();
-        assert_eq!(scenarios_to_execute.len(), 2);
-        Ok(())
-    }
+    // #[test]
+    // fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
+    //     let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
+    //     let scenario = cfg
+    //         .find_scenario("basket_10")
+    //         .expect("scenario 'basket_10' should exist!");
+    //     let scenarios_to_execute = vec![ScenarioToExecute::new(scenario)];
+    //     assert_eq!(scenarios_to_execute.len(), 2);
+    //     Ok(())
+    // }
 
     #[test]
     fn can_create_exec_plan_for_observation() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
 
-        let exec_plan = cfg.create_execution_plan("checkout")?;
-        let scenario_names: Vec<&str> = exec_plan
-            .scenarios_to_execute
-            .iter()
-            .map(|s| s.scenario.name.as_str())
-            .sorted()
-            .collect();
-        let process_names: Vec<&str> = exec_plan
-            .processes_to_execute
-            .into_iter()
-            .map(|proc| match proc.process {
-                ProcessType::Docker { containers: _ } => proc.name.as_str(),
-                ProcessType::BareMetal => proc.name.as_str(),
-            })
-            .sorted()
-            .collect();
+        let exec_plan = cfg.create_execution_plan("checkout", false)?;
+        match exec_plan.execution_mode {
+            ExecutionMode::Observation(scenarios) => {
+                let scenario_names = scenarios
+                    .iter()
+                    .map(|s| s.name.as_str())
+                    .sorted()
+                    .collect_vec();
 
-        assert_eq!(scenario_names, ["basket_10", "user_signup"]);
-        assert_eq!(process_names, ["db", "mailgun", "server"]);
+                let process_names: Vec<&str> = exec_plan
+                    .processes_to_execute
+                    .into_iter()
+                    .map(|proc| match proc.process_type {
+                        ProcessType::Docker { containers: _ } => proc.name.as_str(),
+                        ProcessType::BareMetal => proc.name.as_str(),
+                    })
+                    .sorted()
+                    .collect();
+
+                assert_eq!(scenario_names, ["basket_10", "user_signup"]);
+                assert_eq!(process_names, ["db", "mailgun", "server"]);
+            }
+
+            _ => panic!("oops! was expecting a ObservationMode::Scenarios"),
+        }
 
         Ok(())
     }
 
     #[test]
-    fn can_create_exec_plan_for_scenario() -> anyhow::Result<()> {
+    fn can_create_exec_plan_for_monitor() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
 
-        let exec_plan = cfg.create_execution_plan("basket_10")?;
-        let scenario_names: Vec<&str> = exec_plan
-            .scenarios_to_execute
-            .iter()
-            .map(|s| s.scenario.name.as_str())
-            .sorted()
-            .collect();
-        let process_names: Vec<&str> = exec_plan
-            .processes_to_execute
-            .into_iter()
-            .map(|proc| proc.name.as_str())
-            .sorted()
-            .collect();
+        let exec_plan = cfg.create_execution_plan("live_monitor", false)?;
+        match exec_plan.execution_mode {
+            ExecutionMode::Live => {
+                let process_names: Vec<&str> = exec_plan
+                    .processes_to_execute
+                    .into_iter()
+                    .map(|proc| proc.name.as_str())
+                    .sorted()
+                    .collect();
 
-        assert_eq!(scenario_names, ["basket_10"]);
-        assert_eq!(process_names, ["db", "server"]);
+                assert_eq!(process_names, ["db", "mailgun", "server"]);
+            }
 
+            _ => panic!("oops! was expecting a ObservationMode::Monitor"),
+        }
         Ok(())
     }
 }

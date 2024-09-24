@@ -18,8 +18,15 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
+                    .col(
+                        ColumnDef::new(Run::IsLive)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(ColumnDef::new(Run::CpuAvgPower).float().not_null())
                     .col(ColumnDef::new(Run::StartTime).big_integer().not_null())
-                    .col(ColumnDef::new(Run::StopTime).big_integer())
+                    .col(ColumnDef::new(Run::StopTime).big_integer().not_null())
                     .to_owned(),
             )
             .await
@@ -36,6 +43,8 @@ impl MigrationTrait for Migration {
 pub enum Run {
     Table,
     Id,
+    IsLive,
+    CpuAvgPower,
     StartTime,
     StopTime,
 }
