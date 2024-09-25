@@ -4,7 +4,7 @@ use cardamon::{
     config::{self, Config, ExecutionPlan, ProcessToObserve},
     data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder, Data},
     db_connect, db_migrate, init_config,
-    models::rab_linear_model,
+    models::rab_model,
     run, server,
 };
 use chrono::{TimeZone, Utc};
@@ -152,7 +152,8 @@ async fn main() -> anyhow::Result<()> {
                 .context("Error loading configuration, please run `cardamon init`")?;
 
             // create an execution plan
-            let mut execution_plan = config.create_execution_plan(&name, external_only)?;
+            let cpu = config.cpu.clone();
+            let mut execution_plan = config.create_execution_plan(cpu, &name, external_only)?;
 
             // add external processes to observe.
             add_external_processes(pids, containers, &mut execution_plan)?;
@@ -161,8 +162,7 @@ async fn main() -> anyhow::Result<()> {
             cleanup_stdout_stderr()?;
 
             // run it!
-            let observation_dataset_rows =
-                run(execution_plan, config.cpu.avg_power, &db_conn).await?;
+            let observation_dataset_rows = run(execution_plan, &db_conn).await?;
             let observation_dataset = observation_dataset_rows
                 .last_n_runs(5)
                 .all()
@@ -177,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
                 let run_datasets = scenario_dataset.by_run();
 
                 // execute model for current run
-                let f = rab_linear_model(0.16);
+                let f = rab_model(0.16);
                 let (head, tail) = run_datasets
                     .split_first()
                     .expect("Dataset does not include recent run.");
@@ -195,9 +195,9 @@ async fn main() -> anyhow::Result<()> {
                     true => "--".bright_black(),
                     false => {
                         if trend > 0.0 {
-                            format!("↓ {:.2} W", trend).green()
+                            format!("↓ {:.3}Wh", trend).green()
                         } else {
-                            format!("↑ {:.2} W", trend.abs()).red()
+                            format!("↑ {:.3}Wh", trend.abs()).red()
                         }
                     }
                 };
@@ -211,15 +211,15 @@ async fn main() -> anyhow::Result<()> {
                     .rows(rows![
                         row![
                             TableCell::builder("Duration (s)".bold()).build(),
-                            TableCell::builder("Power (W)".bold()).build(),
+                            TableCell::builder("Power (Wh)".bold()).build(),
                             TableCell::builder("CO2 (g)".bold()).build(),
                             TableCell::builder(format!("Trend (over {} runs)", tail.len()).bold())
                                 .build()
                         ],
                         row![
-                            TableCell::new(run_data.duration()),
-                            TableCell::new(format!("{:.2}", run_data.data.pow)),
-                            TableCell::new(format!("{:.2}", run_data.data.co2)),
+                            TableCell::new(format!("{:.3}s", run_data.duration())),
+                            TableCell::new(format!("{:.3}Wh", run_data.data.pow)),
+                            TableCell::new(format!("{:.3}g", run_data.data.co2)),
                             TableCell::new(trend_str)
                         ]
                     ])
@@ -251,7 +251,7 @@ async fn main() -> anyhow::Result<()> {
                 println!("\nno data found!");
             }
 
-            let f = rab_linear_model(0.16);
+            let f = rab_model(0.16);
             for scenario_dataset in dataset.by_scenario(LiveDataFilter::ExcludeLive) {
                 println!(
                     "{}:",
@@ -262,7 +262,7 @@ async fn main() -> anyhow::Result<()> {
                     .rows(rows![row![
                         TableCell::builder("Datetime (Utc)".bold()).build(),
                         TableCell::builder("Duration (s)".bold()).build(),
-                        TableCell::builder("Power (W)".bold()).build(),
+                        TableCell::builder("Power (Wh)".bold()).build(),
                         TableCell::builder("CO2 (g)".bold()).build()
                     ]])
                     .style(TableStyle::rounded())
@@ -278,9 +278,9 @@ async fn main() -> anyhow::Result<()> {
 
                     table.add_row(row![
                         TableCell::new(run_start_time.format("%d/%m/%y %H:%M")),
-                        TableCell::new(format!("{:.2}", run_duration)),
-                        TableCell::new(format!("{:.2}", run_data.data.pow)),
-                        TableCell::new(format!("{:.2}", run_data.data.co2)),
+                        TableCell::new(format!("{:.3}s", run_duration)),
+                        TableCell::new(format!("{:.4}Wh", run_data.data.pow)),
+                        TableCell::new(format!("{:.4}g", run_data.data.co2)),
                     ]);
                     // points.push((run, run_data.data.pow as f32));
                     // run += 1.0;
@@ -289,8 +289,8 @@ async fn main() -> anyhow::Result<()> {
 
                 // let x_max = points.len() as f32;
                 // let y_data = points.iter().map(|(_, y)| *y);
-                // let y_min = y_data.clone().reduce(f32::min).unwrap_or(0.0).floor();
-                // let y_max = y_data.clone().reduce(f32::max).unwrap_or(0.0).ceil();
+                // let y_min = y_data.clone().reduce(f32::min).unwrap_or(0.0);
+                // let y_max = y_data.clone().reduce(f32::max).unwrap_or(0.0);
                 //
                 // Chart::new_with_y_range(128, 64, 0.0, x_max, y_min, y_max)
                 //     .x_axis_style(textplots::LineStyle::Solid)

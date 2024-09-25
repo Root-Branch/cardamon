@@ -1,11 +1,12 @@
 use crate::{
+    config::Power,
     dao::{self, pagination::Pages},
     data::Data,
-    entities::{iteration::Model as Iteration, metrics::Model as Metrics},
+    entities::{self, iteration::Model as Iteration, metrics::Model as Metrics},
 };
 use anyhow::Context;
 use itertools::Itertools;
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, ModelTrait};
 use std::collections::HashMap;
 
 use super::{ProcessData, ProcessMetrics, RunData, ScenarioData};
@@ -156,7 +157,7 @@ impl<'a> ScenarioDataset<'a> {
         let runs = self
             .data
             .iter()
-            // TODO: Check that this is ascending order
+            .sorted_by(|a, b| b.iteration.start_time.cmp(&a.iteration.start_time))
             .map(|x| &x.iteration.run_id)
             .unique()
             .collect::<Vec<_>>();
@@ -182,7 +183,7 @@ impl<'a> ScenarioDataset<'a> {
     pub async fn apply_model(
         &'a self,
         db: &DatabaseConnection,
-        model: &impl Fn(&Vec<&Metrics>, f32) -> Data,
+        model: &impl Fn(&Vec<&Metrics>, &Power) -> Data,
         aggregation_method: AggregationMethod,
     ) -> anyhow::Result<ScenarioData> {
         let mut all_run_data = vec![];
@@ -262,10 +263,29 @@ impl<'a> ScenarioRunDataset<'a> {
     pub async fn apply_model(
         &'a self,
         db: &DatabaseConnection,
-        model: &impl Fn(&Vec<&Metrics>, f32) -> Data,
+        model: &impl Fn(&Vec<&Metrics>, &Power) -> Data,
     ) -> anyhow::Result<RunData> {
         let run = dao::run::fetch(self.run_id, &db).await?;
-        let cpu_avg_pow = run.cpu_avg_power;
+        let cpu = run
+            .find_related(entities::cpu::Entity)
+            .one(db)
+            .await?
+            .context("Run is missing CPU!")?;
+        let power = cpu
+            .find_related(entities::power_curve::Entity)
+            .one(db)
+            .await?
+            .map(|power| {
+                Power::Curve(
+                    power.a as f64,
+                    power.b as f64,
+                    power.c as f64,
+                    power.d as f64,
+                )
+            })
+            .or(cpu.tdp.map(|tdp| Power::Tdp(tdp as f64)))
+            .context("Run is missing CPU or CPU is missing power")?;
+
         let start_time = run.start_time;
         let stop_time = run.stop_time;
 
@@ -279,7 +299,7 @@ impl<'a> ScenarioRunDataset<'a> {
         for scenario_run_iteration_dataset in self.by_iteration() {
             for (proc_id, metrics) in scenario_run_iteration_dataset.by_process() {
                 // run the RAB model to get power and co2 emissions
-                let cardamon_data = model(&metrics, cpu_avg_pow);
+                let cardamon_data = model(&metrics, &power);
 
                 // convert the metrics database model into metrics data
                 let proc_metrics = metrics

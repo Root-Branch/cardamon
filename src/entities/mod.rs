@@ -2,6 +2,8 @@
 
 pub mod prelude;
 
+pub mod cpu;
 pub mod iteration;
 pub mod metrics;
+pub mod power_curve;
 pub mod run;

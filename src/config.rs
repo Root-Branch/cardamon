@@ -33,19 +33,29 @@ pub struct Config {
 impl Config {
     pub fn write_example_to_file(
         cpu_name: &str,
-        cpu_avg_power: f64,
+        cpu_power: Power,
         path: &std::path::Path,
     ) -> anyhow::Result<File> {
         // remove the line containing tdp
         let mut lines = EXAMPLE_CONFIG.lines().map(|s| s.to_string()).collect_vec();
 
         // add a line at the top of the file containing the new tdp
-        let mut new_conf_lines = vec![
-            "[cpu]".to_string(),
-            format!("name = \"{}\"", cpu_name),
-            format!("avg_power = {}", cpu_avg_power),
-            "".to_string(),
-        ];
+        let mut new_conf_lines = match cpu_power {
+            Power::Tdp(tdp) => vec![
+                "[cpu]".to_string(),
+                format!("name = \"{}\"", cpu_name),
+                format!("tdp = {}", tdp),
+                "".to_string(),
+            ],
+
+            Power::Curve(a, b, c, d) => vec![
+                "[cpu]".to_string(),
+                format!("name = \"{}\"", cpu_name),
+                format!("curve = [{},{},{},{}]", a, b, c, d),
+                "".to_string(),
+            ],
+        };
+
         new_conf_lines.append(&mut lines);
         let conf_str = new_conf_lines.join(LINE_ENDING);
 
@@ -116,6 +126,7 @@ impl Config {
 
     pub fn create_execution_plan(
         &self,
+        cpu: Cpu,
         obs_name: &str,
         external_only: bool,
     ) -> anyhow::Result<ExecutionPlan> {
@@ -147,7 +158,11 @@ impl Config {
                     let proc_names = proc_set.iter().collect_vec();
                     processes_to_execute = self.find_processes(&proc_names)?;
                 }
-                ExecutionPlan::new(processes_to_execute, ExecutionMode::Observation(scenarios))
+                ExecutionPlan::new(
+                    cpu,
+                    processes_to_execute,
+                    ExecutionMode::Observation(scenarios),
+                )
             }
 
             Observation::LiveMonitor { name: _, processes } => {
@@ -155,7 +170,7 @@ impl Config {
                     let proc_names = processes.iter().collect_vec();
                     processes_to_execute = self.find_processes(&proc_names)?;
                 }
-                ExecutionPlan::new(processes_to_execute, ExecutionMode::Live)
+                ExecutionPlan::new(cpu, processes_to_execute, ExecutionMode::Live)
             }
         };
 
@@ -163,10 +178,18 @@ impl Config {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum Power {
+    Curve(f64, f64, f64, f64),
+    Tdp(f64),
+}
+
+#[derive(Debug, Deserialize, PartialEq, Serialize, Clone)]
 pub struct Cpu {
     pub name: String,
-    pub avg_power: f32,
+    #[serde(flatten)]
+    pub power: Power,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone, Copy, Serialize)]
@@ -254,13 +277,19 @@ pub enum ExecutionMode<'a> {
 
 #[derive(Debug)]
 pub struct ExecutionPlan<'a> {
+    pub cpu: Cpu,
     pub external_processes_to_observe: Option<Vec<ProcessToObserve>>,
     pub processes_to_execute: Vec<&'a Process>,
     pub execution_mode: ExecutionMode<'a>,
 }
 impl<'a> ExecutionPlan<'a> {
-    pub fn new(processes_to_execute: Vec<&'a Process>, execution_mode: ExecutionMode<'a>) -> Self {
+    pub fn new(
+        cpu: Cpu,
+        processes_to_execute: Vec<&'a Process>,
+        execution_mode: ExecutionMode<'a>,
+    ) -> Self {
         ExecutionPlan {
+            cpu,
             external_processes_to_observe: None,
             processes_to_execute,
             execution_mode,
@@ -368,7 +397,12 @@ mod tests {
     fn can_create_exec_plan_for_observation() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
 
-        let exec_plan = cfg.create_execution_plan("checkout", false)?;
+        let cpu = Cpu {
+            name: "AMD Ryzen 7 6850U".to_string(),
+            power: Power::Tdp(11.2),
+        };
+
+        let exec_plan = cfg.create_execution_plan(cpu, "checkout", false)?;
         match exec_plan.execution_mode {
             ExecutionMode::Observation(scenarios) => {
                 let scenario_names = scenarios
@@ -401,7 +435,12 @@ mod tests {
     fn can_create_exec_plan_for_monitor() -> anyhow::Result<()> {
         let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
 
-        let exec_plan = cfg.create_execution_plan("live_monitor", false)?;
+        let cpu = Cpu {
+            name: "AMD Ryzen 7 6850U".to_string(),
+            power: Power::Tdp(11.2),
+        };
+
+        let exec_plan = cfg.create_execution_plan(cpu, "live_monitor", false)?;
         match exec_plan.execution_mode {
             ExecutionMode::Live => {
                 let process_names: Vec<&str> = exec_plan

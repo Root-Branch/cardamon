@@ -66,12 +66,13 @@ subprocess = "0.2.9"
 sysinfo = "0.31.2"
 tar = "0.4.41"
 term-table = "1.4.0"
+textplots = "0.8.6"
 # textplots = "0.8.6"
 # time = "0.3.36"
 tokio = { version = "1.37.0", features = ["full"] }
 tokio-util = "0.7.11"
 toml = "0.8.12"
-tower-http = { version = "0.5.2", features = ["cors"] }
+tower-http = { version = "0.5.2", features = ["cors", "fs"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = [
   "registry",

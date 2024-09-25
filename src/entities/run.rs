@@ -2,24 +2,37 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "run")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub is_live: bool,
-    #[sea_orm(column_type = "Float")]
-    pub cpu_avg_power: f32,
+    pub cpu_id: i32,
     pub start_time: i64,
     pub stop_time: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::cpu::Entity",
+        from = "Column::CpuId",
+        to = "super::cpu::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Cpu,
     #[sea_orm(has_many = "super::iteration::Entity")]
     Iteration,
     #[sea_orm(has_many = "super::metrics::Entity")]
     Metrics,
+}
+
+impl Related<super::cpu::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Cpu.def()
+    }
 }
 
 impl Related<super::iteration::Entity> for Entity {

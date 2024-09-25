@@ -1,25 +1,38 @@
 use std::{future::Future, pin::Pin};
 
-use crate::{data::Data, entities::metrics::Model as Metrics};
+use crate::{config::Power, data::Data, entities::metrics::Model as Metrics};
 use itertools::Itertools;
-use sea_orm::DatabaseConnection;
 
 pub type BoxFuture = Pin<Box<dyn Future<Output = anyhow::Result<Data>> + Send>>;
 
-pub fn rab_linear_model(ci_g_w: f32) -> impl Fn(&Vec<&Metrics>, f32) -> Data {
-    return move |metrics, cpu_avg_pow_w| {
-        // TODO: THIS MUST BE FETCH ASYNCRONOUSLY USING THE run_id!
+fn boa_model(a: f64, b: f64, c: f64, d: f64) -> impl Fn(f64) -> f64 {
+    move |workload| a * (b * (workload + c)).ln() + d
+}
 
+pub fn rab_model(ci_g_w: f32) -> impl Fn(&Vec<&Metrics>, &Power) -> Data {
+    return move |metrics, power| {
         let data = metrics
             .into_iter()
             .sorted_by(|a, b| b.time_stamp.cmp(&a.time_stamp))
             .tuple_windows()
-            .map(|(a, b)| {
-                // taking the midpoint of the two datapoints and dividing by 50 because we're
-                // assuming avg_cpu_pow is at 50% utilization
-                (0.5 * (a.cpu_usage + b.cpu_usage)) / 50_f64
-                    * cpu_avg_pow_w as f64
-                    * ((a.time_stamp - b.time_stamp) as f64 / 1000_f64)
+            .map(|(x, y)| {
+                match *power {
+                    Power::Curve(a, b, c, d) => {
+                        let cpu_util = 0.5 * (x.cpu_usage + y.cpu_usage);
+                        let delta_t_h = (x.time_stamp - y.time_stamp) as f64 / 3_600_00.0;
+
+                        // boa_model(a, b, c, d)(cpu_util * delta_t_h)
+                        boa_model(a, b, c, d)(cpu_util) * delta_t_h
+                    }
+
+                    Power::Tdp(tdp) => {
+                        let delta_t_h = (x.time_stamp - y.time_stamp) as f64 / 3_600_000.0;
+
+                        // taking the midpoint of the two datapoints and dividing by 50 because we're
+                        // assuming tdp is at 50% utilization
+                        (0.5 * (x.cpu_usage + y.cpu_usage)) / 50.0 * tdp * delta_t_h
+                    }
+                }
             })
             .collect_vec();
 
@@ -31,11 +44,4 @@ pub fn rab_linear_model(ci_g_w: f32) -> impl Fn(&Vec<&Metrics>, f32) -> Data {
             co2: co2_g_w,
         }
     };
-}
-
-pub fn rab_nonlinear_model(
-    _ci: f32,
-    _db: &DatabaseConnection,
-) -> impl Fn(&Vec<&Metrics>, f32) -> Data {
-    return move |_metrics, _run_id| todo!();
 }

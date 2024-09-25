@@ -5,7 +5,7 @@ use crate::{
         dataset_builder::DatasetBuilder,
         ProcessMetrics, ScenarioData,
     },
-    models::{self, rab_linear_model},
+    models::{self, rab_model},
     server::errors::ServerError,
 };
 use anyhow::Context;
@@ -95,11 +95,7 @@ pub async fn build_scenario_data(
     let mut scenario_data = vec![];
     for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
         let data = scenario_dataset
-            .apply_model(
-                &db,
-                &models::rab_linear_model(0.16),
-                AggregationMethod::MostRecent,
-            )
+            .apply_model(&db, &models::rab_model(0.16), AggregationMethod::MostRecent)
             .await?;
         scenario_data.push(data);
     }
@@ -209,9 +205,7 @@ pub async fn get_runs(
     let mut runs = vec![];
     for scenario_dataset in &dataset.by_scenario(LiveDataFilter::IncludeLive) {
         for run_dataset in scenario_dataset.by_run() {
-            let model_data = run_dataset
-                .apply_model(&db, &rab_linear_model(0.16))
-                .await?;
+            let model_data = run_dataset.apply_model(&db, &rab_model(0.16)).await?;
             let processes = model_data
                 .process_data
                 .iter()

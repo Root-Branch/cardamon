@@ -16,9 +16,9 @@ use crate::{
 use anyhow::{anyhow, Context};
 use chrono::Utc;
 use colored::Colorize;
-use config::{ExecutionPlan, Process, ProcessToObserve, ProcessType, Redirect, Scenario};
+use config::{ExecutionPlan, Power, Process, ProcessToObserve, ProcessType, Redirect, Scenario};
 use data::dataset_builder::DatasetRows;
-use entities::{iteration, run};
+use entities::{cpu, iteration, run};
 use sea_orm::*;
 use serde_json::Value;
 use std::{
@@ -47,7 +47,7 @@ fn ask_for_cpu() -> String {
     }
 }
 
-fn ask_for_tdp() -> f64 {
+fn ask_for_tdp() -> Power {
     loop {
         print!("Please enter the TDP of your CPU in watts: ");
         let _ = std::io::stdout().flush();
@@ -57,7 +57,7 @@ fn ask_for_tdp() -> f64 {
         match res {
             Ok(_) => match input.trim().parse::<f64>() {
                 Ok(parsed_input) => {
-                    return parsed_input;
+                    return Power::Tdp(parsed_input);
                 }
                 Err(_) => {
                     println!("{}", "Please enter a valid number.".yellow());
@@ -74,15 +74,28 @@ fn find_cpu() -> Option<String> {
     sys.cpus().first().map(|cpu| cpu.brand().to_string())
 }
 
-fn parse_json(json_obj: &Value) -> Option<f64> {
-    json_obj
-        .get("verbose")?
-        .get("avg_power")?
-        .get("value")?
-        .as_f64()
+fn try_power_curve(json_obj: &Value) -> Option<Power> {
+    let params_obj = json_obj.get("verbose")?.get("params")?.get("value")?;
+
+    let a = params_obj.get("a")?.as_f64()?;
+    let b = params_obj.get("b")?.as_f64()?;
+    let c = params_obj.get("c")?.as_f64()?;
+    let d = params_obj.get("d")?.as_f64()?;
+
+    Some(Power::Curve(a, b, c, d))
 }
 
-async fn fetch_tdp(cpu_name: &str) -> anyhow::Result<f64> {
+fn try_tdp(json_obj: &Value) -> Option<Power> {
+    let tdp = json_obj
+        .get("verbose")?
+        .get("tdp")?
+        .get("value")?
+        .as_f64()?;
+
+    Some(Power::Tdp(tdp))
+}
+
+async fn fetch_power(cpu_name: &str) -> anyhow::Result<Power> {
     let client = reqwest::Client::new();
     let mut json = HashMap::new();
     json.insert("name", cpu_name);
@@ -95,7 +108,10 @@ async fn fetch_tdp(cpu_name: &str) -> anyhow::Result<f64> {
         .await?;
 
     let json_obj = resp.json().await?;
-    parse_json(&json_obj).context("Error finding CPU stats from Boavizta")
+
+    try_power_curve(&json_obj)
+        .or(try_tdp(&json_obj))
+        .context("Error fetching power from Boavizta!")
 }
 
 /// Attempts to find the users CPU automatically and asks the user to enter it manually if that
@@ -144,18 +160,29 @@ pub async fn init_config() {
         }
     }
 
-    let tdp = match fetch_tdp(&cpu_name).await {
-        Ok(tdp) => {
-            println!("{} {}", "Boavista reports an avg power of".yellow(), tdp);
-            tdp
+    let power = match fetch_power(&cpu_name).await {
+        Ok(pow @ Power::Curve(a, b, c, d)) => {
+            let peak_pow = a * (b * (100.0 + c)).ln() + d;
+            println!(
+                "{} {}",
+                "Boavista reports a peak power of".yellow(),
+                peak_pow
+            );
+            pow
         }
+
+        Ok(pow @ Power::Tdp(tdp)) => {
+            println!("{} {}", "Boavizta reports a tdp of".yellow(), tdp);
+            pow
+        }
+
         Err(_) => {
             println!("{}", "Cannot get avg power from Boavizta!".red());
             ask_for_tdp()
         }
     };
 
-    match Config::write_example_to_file(&cpu_name, tdp, Path::new("./cardamon.toml")) {
+    match Config::write_example_to_file(&cpu_name, power, Path::new("./cardamon.toml")) {
         Ok(_) => {
             println!("{}", "cardamon.toml created!".green());
             println!("\n🤩\n");
@@ -523,7 +550,6 @@ pub async fn run_live<'a>(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
-    cpu_avg_power: f32,
     db: &DatabaseConnection,
 ) -> anyhow::Result<DatasetRows> {
     let mut processes_to_observe = exec_plan.external_processes_to_observe.unwrap_or(vec![]); // external procs to observe are cloned here.
@@ -548,14 +574,63 @@ pub async fn run<'a>(
         _ => false,
     };
 
+    // check if the processor already exists in the db.
+    // If it does then reuse it for this run else save
+    // a new one
+    let cpu = cpu::Entity::find()
+        .filter(cpu::Column::Name.eq(&exec_plan.cpu.name))
+        .one(db)
+        .await?;
+
+    let cpu_id = match cpu {
+        Some(cpu) => cpu.id,
+        None => {
+            let cpu = match exec_plan.cpu.power {
+                Power::Tdp(tdp) => {
+                    cpu::ActiveModel {
+                        id: ActiveValue::NotSet,
+                        name: ActiveValue::Set(exec_plan.cpu.name),
+                        tdp: ActiveValue::Set(Some(tdp as f32)),
+                        power_curve_id: ActiveValue::NotSet,
+                    }
+                    .save(db)
+                    .await
+                }
+
+                Power::Curve(a, b, c, d) => {
+                    let power_curve = entities::power_curve::ActiveModel {
+                        id: ActiveValue::NotSet,
+                        a: ActiveValue::Set(a as f32),
+                        b: ActiveValue::Set(b as f32),
+                        c: ActiveValue::Set(c as f32),
+                        d: ActiveValue::Set(d as f32),
+                    }
+                    .save(db)
+                    .await?
+                    .try_into_model()?;
+
+                    cpu::ActiveModel {
+                        id: ActiveValue::NotSet,
+                        name: ActiveValue::Set(exec_plan.cpu.name),
+                        tdp: ActiveValue::NotSet,
+                        power_curve_id: ActiveValue::Set(Some(power_curve.id)),
+                    }
+                    .save(db)
+                    .await
+                }
+            }?;
+
+            cpu.try_into_model()?.id
+        }
+    };
+
     // create a new run
-    let mut active_run = run::ActiveModel {
-        id: sea_orm::ActiveValue::NotSet,
-        is_live: sea_orm::ActiveValue::Set(is_live),
-        cpu_avg_power: sea_orm::ActiveValue::Set(cpu_avg_power),
-        start_time: sea_orm::ActiveValue::Set(start_time),
-        stop_time: sea_orm::ActiveValue::set(start_time), // set to start time for now we'll update
-                                                          // it later
+    let mut active_run: run::ActiveModel = run::ActiveModel {
+        id: ActiveValue::NotSet,
+        is_live: ActiveValue::Set(is_live),
+        cpu_id: ActiveValue::Set(cpu_id),
+        start_time: ActiveValue::Set(start_time),
+        stop_time: ActiveValue::set(start_time), // set to start time for now we'll update it later
     }
     .save(db)
     .await?;
@@ -601,7 +676,7 @@ pub mod tests {
     use super::*;
     use crate::{
         config::{Process, ProcessType},
-        fetch_tdp, metrics_logger, run_process, ProcessToObserve,
+        fetch_power, metrics_logger, run_process, ProcessToObserve,
     };
     use std::time::Duration;
     use sysinfo::{Pid, System};
@@ -629,8 +704,11 @@ pub mod tests {
         let cpu_name = find_cpu();
 
         if let Some(cpu_name) = cpu_name {
-            let tdp = fetch_tdp(&cpu_name).await?;
-            assert!(tdp > 0f64);
+            let power = fetch_power(&cpu_name).await?;
+            match power {
+                Power::Curve(_, _, _, _) => assert!(true),
+                Power::Tdp(tdp) => assert!(tdp > 0.0),
+            }
             return Ok(());
         }
 

@@ -1,11 +1,6 @@
 [cpu]
 name = "AMD Ryzen 7 PRO 6850U with Radeon Graphics"
-curve = [
-  7.627190097500079,
-  0.07551567953624883,
-  20.45110313049153,
-  -1.5261422759740344,
-]
+avg_power = 11.223
 
 # Processes
 # ---------
@@ -64,14 +59,7 @@ curve = [
 # process.containers = ["postgres"]
 
 [[process]]
-name = "test_proc1"
-up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
-down = "kill {pid}"
-redirect.to = "file"
-process.type = "baremetal"
-
-[[process]]
-name = "test_proc2"
+name = "test_proc"
 up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
 down = "kill {pid}"
 redirect.to = "file"
@@ -115,18 +103,12 @@ process.type = "baremetal"
 #     required - true
 #
 [[scenario]]
-name = "sleep_short"
+name = "sleep"
 desc = "Sleeps for 10 seconds, a real scenario would call your app"
 command = "sleep 10"
 iterations = 2
-processes = ["test_proc1", "test_proc2"]
+processes = ["test_proc"]
 
-[[scenario]]
-name = "sleep_long"
-desc = "Sleeps for 20 seconds, a real scenario would call your app"
-command = "sleep 20"
-iterations = 2
-processes = ["test_proc1", "test_proc2"]
 
 # Observations
 # ---------------
@@ -152,10 +134,10 @@ processes = ["test_proc1", "test_proc2"]
 #     required - required if observe.scenarios is not defined.
 #
 [[observation]]
-name = "test_sleep_short"
-scenarios = ["sleep_short"]
+name = "test_obs"
+scenarios = ["sleep"]
 
 [[observation]]
-name = "test_sleep_long"
-scenarios = ["sleep_long"]
+name = "live_monitor"
+processes = ["test_proc"]
 
