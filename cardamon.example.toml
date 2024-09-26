@@ -1,0 +1,43 @@
+[cpu]
+name = "AMD Ryzen 7 PRO 6850U with Radeon Graphics"
+curve = [
+  7.627190097500079,
+  0.07551567953624883,
+  20.45110313049153,
+  -1.5261422759740344,
+]
+
+# PROCESSES
+# ---------
+[[process]]
+name = "test_proc1"
+up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
+down = "kill {pid}"
+redirect.to = "file"
+process.type = "baremetal"
+
+[[process]]
+name = "test_proc2"
+up = "bash -c \"while true; do shuf -i 0-1337 -n 1; done\""
+down = "kill {pid}"
+redirect.to = "file"
+process.type = "baremetal"
+
+# SCENARIOS 
+# ---------
+[[scenario]]
+name = "double_proc"
+desc = "Sleeps for 10 seconds, a real scenario would call your app"
+command = "sleep 10"
+iterations = 2
+processes = ["test_proc1", "test_proc2"]
+
+# OBSERVATIONS
+# ------------
+[[observation]]
+name = "obs_double"
+scenarios = ["double_proc"]
+
+[[observation]]
+name = "live_monitor"
+processes = ["test_proc1", "test_proc2"]

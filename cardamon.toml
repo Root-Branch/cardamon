@@ -115,16 +115,16 @@ process.type = "baremetal"
 #     required - true
 #
 [[scenario]]
-name = "sleep_short"
+name = "single_proc"
 desc = "Sleeps for 10 seconds, a real scenario would call your app"
 command = "sleep 10"
 iterations = 2
-processes = ["test_proc1", "test_proc2"]
+processes = ["test_proc1"]
 
 [[scenario]]
-name = "sleep_long"
-desc = "Sleeps for 20 seconds, a real scenario would call your app"
-command = "sleep 20"
+name = "double_proc"
+desc = "Sleeps for 10 seconds, a real scenario would call your app"
+command = "sleep 10"
 iterations = 2
 processes = ["test_proc1", "test_proc2"]
 
@@ -152,10 +152,13 @@ processes = ["test_proc1", "test_proc2"]
 #     required - required if observe.scenarios is not defined.
 #
 [[observation]]
-name = "test_sleep_short"
-scenarios = ["sleep_short"]
+name = "obs_single"
+scenarios = ["single_proc"]
 
 [[observation]]
-name = "test_sleep_long"
-scenarios = ["sleep_long"]
+name = "obs_double"
+scenarios = ["double_proc"]
 
+[[observation]]
+name = "live_monitor"
+processes = ["test_proc1", "test_proc2"]

@@ -30,7 +30,16 @@ mod tests {
     async fn fetch_metrics_within() -> anyhow::Result<()> {
         let db = db_connect("sqlite::memory:", None).await?;
         db_migrate(&db).await?;
-        setup_fixtures(&["./fixtures/runs.sql", "./fixtures/metrics.sql"], &db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
+                "./fixtures/runs.sql",
+                "./fixtures/metrics.sql",
+            ],
+            &db,
+        )
+        .await?;
 
         let metrics = dao::metrics::fetch_within(1, 1717507600000, 1717507600200, &db).await?;
 

@@ -14,8 +14,8 @@ use dotenvy::dotenv;
 use itertools::Itertools;
 use std::{env, path::Path};
 use term_table::{row, row::Row, rows, table_cell::*, Table, TableStyle};
+use tracing_subscriber::EnvFilter;
 // use textplots::{AxisBuilder, Chart, Plot, Shape, TickDisplay, TickDisplayBuilder};
-use tracing::{trace, Level};
 
 #[derive(Parser, Debug)]
 #[command(author = "Oliver Winks (@ohuu), William Kimbell (@seal)", version, about, long_about = None)]
@@ -109,25 +109,16 @@ async fn main() -> anyhow::Result<()> {
     // Parse clap args
     let args = Cli::parse();
 
-    // Set the debug level, prioritizing command-line args over config
-    let log_level = match env::var("LOG_LEVEL").unwrap_or("WARN".to_string()).as_str() {
-        "TRACE" => Level::TRACE,
-        "DEBUG" => Level::DEBUG,
-        "INFO" => Level::INFO,
-        "WARN" => Level::WARN,
-        "ERROR" => Level::ERROR,
-        _ => Level::WARN,
-    };
+    let log_filter = env::var("LOG_FILTER").unwrap_or("warn".to_string());
 
     // Set up tracing subscriber
     let subscriber = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::new(log_filter))
         .with_target(false)
-        .compact()
+        // .compact()
         .pretty()
-        .with_max_level(log_level)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
-    trace!("Setup subscriber for logging");
 
     // connect to the database and run migrations
     let database_url =
@@ -252,9 +243,9 @@ async fn main() -> anyhow::Result<()> {
             }
 
             let f = rab_model(0.16);
-            for scenario_dataset in dataset.by_scenario(LiveDataFilter::ExcludeLive) {
+            for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
                 println!(
-                    "{}:",
+                    "Scenario {}:",
                     format!("{}", scenario_dataset.scenario_name()).green()
                 );
 

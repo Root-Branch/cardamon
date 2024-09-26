@@ -305,6 +305,7 @@ impl<'a> ScenarioRunDataset<'a> {
                 let proc_metrics = metrics
                     .iter()
                     .map(|metrics| ProcessMetrics {
+                        proc_id: proc_id.clone(),
                         timestamp: metrics.time_stamp,
                         cpu_usage: metrics.cpu_usage,
                     })
@@ -385,6 +386,8 @@ mod tests {
         db_migrate(&db).await?;
         setup_fixtures(
             &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
                 "./fixtures/runs.sql",
                 "./fixtures/iterations.sql",
                 "./fixtures/metrics.sql",
@@ -412,6 +415,8 @@ mod tests {
         db_migrate(&db).await?;
         setup_fixtures(
             &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
                 "./fixtures/runs.sql",
                 "./fixtures/iterations.sql",
                 "./fixtures/metrics.sql",
@@ -437,7 +442,7 @@ mod tests {
             .map(|ds| ds.scenario_name)
             .collect::<Vec<_>>();
         assert_eq!(
-            vec!["scenario_1", "scenario_2", "scenario_3"],
+            vec!["scenario_3", "scenario_2", "scenario_1"],
             scenario_names
         );
 
@@ -496,6 +501,8 @@ mod tests {
         db_migrate(&db).await?;
         setup_fixtures(
             &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
                 "./fixtures/runs.sql",
                 "./fixtures/iterations.sql",
                 "./fixtures/metrics.sql",
@@ -531,7 +538,7 @@ mod tests {
                         .iter()
                         .map(|ds| ds.run_id)
                         .collect::<Vec<_>>();
-                    assert_eq!(vec![1, 2], run_ids);
+                    assert_eq!(vec![2, 1], run_ids);
                 }
 
                 "scenario_3" => {
@@ -540,7 +547,7 @@ mod tests {
                         .iter()
                         .map(|ds| ds.run_id)
                         .collect::<Vec<_>>();
-                    assert_eq!(vec![1, 2, 3], run_ids);
+                    assert_eq!(vec![3, 2, 1], run_ids);
                 }
 
                 _ => panic!("unknown scenario in dataset!"),
@@ -557,6 +564,8 @@ mod tests {
         db_migrate(&db).await?;
         setup_fixtures(
             &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
                 "./fixtures/runs.sql",
                 "./fixtures/iterations.sql",
                 "./fixtures/metrics.sql",

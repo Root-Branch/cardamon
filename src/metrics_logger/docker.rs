@@ -302,7 +302,6 @@ CMD ["sleep", "infinity"]
         // 2.. Removes _ and - as these are invalid
         let image_id = nanoid!(10, &nanoid::alphabet::SAFE[2..]).to_lowercase();
         let image_id_latest = format!("{}:latest", image_id);
-        println!("{}", image_id_latest);
         // Build the image
         let options = BuildImageOptions {
             dockerfile: "Dockerfile",
@@ -445,7 +444,6 @@ CMD ["sleep", "infinity"]
 
         // Spawn task ( async )
         join_set.spawn(async move {
-            println!("starting to record metrics");
             tokio::select! {
                 _ = task_token.cancelled() => {}
                 _ = keep_logging(vec![proc_to_observe], task_metrics_log)=> {}

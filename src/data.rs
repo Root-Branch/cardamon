@@ -57,6 +57,7 @@ impl Data {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ProcessMetrics {
+    pub proc_id: String,
     pub timestamp: i64,
     pub cpu_usage: f64,
 }

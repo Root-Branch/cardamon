@@ -177,7 +177,7 @@ pub async fn init_config() {
         }
 
         Err(_) => {
-            println!("{}", "Cannot get avg power from Boavizta!".red());
+            println!("{}", "Cannot get power from Boavizta for your CPU!".red());
             ask_for_tdp()
         }
     };

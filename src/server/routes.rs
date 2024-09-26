@@ -17,7 +17,7 @@ use chrono::Utc;
 use itertools::Itertools;
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
-use tracing::{info, instrument};
+use tracing::{instrument, trace};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,7 +117,14 @@ pub async fn get_scenarios(
     let page = page - 1; // DB needs -1 indexing
     let limit = params.limit.unwrap_or(5);
 
-    info!("Fetching scenarios between {} and {}", begin, end);
+    trace!(
+        "Fetching scenarios:\nbegin: {}, end: {}\nlast_n: {}\npage: {}, page_size: {}",
+        begin,
+        end,
+        last_n,
+        page,
+        limit
+    );
 
     let dataset = match &params.search_query {
         Some(query) => {
@@ -188,7 +195,12 @@ pub async fn get_runs(
     let page = page - 1; // DB needs -1 indexing
     let limit = params.limit.unwrap_or(5);
 
-    info!("Fetching runs for scenario with name {} ", scenario_name);
+    trace!(
+        "Fetching runs:\nscenario: {}\npage: {}, page_size: {}",
+        scenario_name,
+        page,
+        limit
+    );
 
     let dataset = DatasetBuilder::new()
         .scenario(&scenario_name)
@@ -201,6 +213,14 @@ pub async fn get_runs(
         Pages::NotRequired => 0,
         Pages::Required(pages) => pages,
     };
+
+    let poop = dataset
+        .by_scenario(LiveDataFilter::IncludeLive)
+        .get(0)
+        .unwrap()
+        .by_run()
+        .len();
+    trace!("{:?}", poop);
 
     let mut runs = vec![];
     for scenario_dataset in &dataset.by_scenario(LiveDataFilter::IncludeLive) {
@@ -249,6 +269,8 @@ mod tests {
         db_migrate(&db).await?;
         setup_fixtures(
             &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
                 "./fixtures/runs.sql",
                 "./fixtures/iterations.sql",
                 "./fixtures/metrics.sql",
@@ -268,8 +290,8 @@ mod tests {
         let _res = build_scenario_data(&dataset, &db).await?;
 
         // uncomment to see generated json response
-        let json_str = serde_json::to_string_pretty(&_res)?;
-        println!("{}", json_str);
+        // let json_str = serde_json::to_string_pretty(&_res)?;
+        // println!("{}", json_str);
 
         Ok(())
     }

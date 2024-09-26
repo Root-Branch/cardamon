@@ -6,6 +6,7 @@ use crate::{
 use anyhow::{self, Context};
 use sea_orm::*;
 use sea_query::{Expr, Query};
+use tracing::trace;
 
 #[derive(DerivePartialModel, FromQueryResult)]
 #[sea_orm(entity = "Iteration")]
@@ -13,23 +14,27 @@ pub struct RunId {
     pub run_id: i32,
 }
 
-/// Return all iterations for the given scenario over all runs. Page the results.
 pub async fn fetch_runs_all(
     scenarios: &Vec<String>,
     page: Option<Page>,
     db: &DatabaseConnection,
 ) -> anyhow::Result<(Vec<iteration::Model>, Pages)> {
+    trace!("page = {:?}", page);
+    let sub_query = Query::select()
+        .column(iteration::Column::RunId)
+        .from(iteration::Entity)
+        .to_owned();
+
     let query = iteration::Entity::find()
         .filter(iteration::Column::ScenarioName.is_in(scenarios))
-        .order_by_desc(iteration::Column::StartTime);
+        .filter(iteration::Column::RunId.in_subquery(sub_query))
+        .order_by_desc(iteration::Column::StartTime)
+        .group_by(iteration::Column::RunId);
 
     match page {
         Some(page) => {
-            let count = query
-                .clone()
-                .distinct_on([iteration::Column::RunId])
-                .count(db)
-                .await?;
+            let count = query.clone().count(db).await?;
+            trace!("count = {}", count);
             let page_count = (count as f64 / page.size as f64).ceil() as u64;
 
             let res = query.paginate(db, page.size).fetch_page(page.num).await?;
@@ -173,7 +178,16 @@ mod tests {
     async fn fetch_iterations_of_last_n_runs_for_schema() -> anyhow::Result<()> {
         let db = db_connect("sqlite::memory:", None).await?;
         db_migrate(&db).await?;
-        setup_fixtures(&["./fixtures/runs.sql", "./fixtures/iterations.sql"], &db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+            ],
+            &db,
+        )
+        .await?;
 
         // fetch the latest scenario_1 run
         let (scenario_iterations, _) =

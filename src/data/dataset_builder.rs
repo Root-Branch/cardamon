@@ -7,6 +7,7 @@ use crate::{
 };
 use anyhow::Context;
 use sea_orm::DatabaseConnection;
+use tracing::trace;
 
 #[derive(Debug)]
 pub enum ScenarioSelection {
@@ -209,6 +210,7 @@ impl DatasetColPager {
     }
 
     pub fn page(self, page_size: u64, page_num: u64) -> anyhow::Result<DatasetBuilderFinal> {
+        trace!("page_size = {}", page_size);
         match self.scenario_selection {
             ScenarioSelection::One(_) => Ok(DatasetBuilderFinal {
                 scenario_selection: self.scenario_selection,

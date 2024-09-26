@@ -9,6 +9,7 @@ use std::{
 };
 use sysinfo::{Pid, System};
 use tokio::time::Duration;
+use tracing::trace;
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is
 /// intended to be called from `metrics_logger::log_scenario` or `metrics_logger::log_live`
@@ -32,8 +33,10 @@ pub async fn keep_logging(
     metrics_log: Arc<Mutex<MetricsLog>>,
 ) -> anyhow::Result<()> {
     let mut system = System::new_all();
+    system.refresh_all();
 
     loop {
+        system.refresh_all();
         tokio::time::sleep(Duration::from_millis(1000)).await;
         for process_to_observe in processes_to_observe.iter() {
             match process_to_observe {
@@ -67,7 +70,7 @@ fn update_metrics_log(metrics: CpuMetrics, metrics_log: &Arc<Mutex<MetricsLog>>)
 
 async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics> {
     // refresh system information
-    system.refresh_all();
+    // system.refresh_all();
 
     if let Some(process) = system.process(Pid::from_u32(pid)) {
         let core_count = num_cpus::get() as i32;
@@ -88,6 +91,8 @@ async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics
                 let name_str = process_name.to_string_lossy();
                 name_str.deref().to_string()
             });
+
+        trace!("[PID {}] cpu_usage: {:?}", process.pid(), cpu_usage);
         let metrics = CpuMetrics {
             process_id: format!("{pid}"),
             process_name,
@@ -187,6 +192,8 @@ mod tests {
 
         // create a new sysinfo system
         let mut system = System::new_all();
+        system.refresh_all();
+        system.refresh_all();
 
         // gather metrics for a little while
         let mut metrics_log = vec![];

@@ -1,6 +1,6 @@
 [cpu]
-name = "AMD Ryzen 7 Pro 6850U with radeon"
-avg_power = 11.223
+name = "AMD Ryzen 7 Pro 6850U"
+tdp = 15
 
 [[process]]
 name = "db"

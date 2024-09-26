@@ -54,20 +54,13 @@ async fn create_app(db: &DatabaseConnection) -> Router {
     .route("/user", get(routes::user::get_user))
     .layer(middleware::from_fn_with_state(pool.clone(), api_key_auth));
     */
+
     Router::new()
         .route("/api/scenarios", get(routes::get_scenarios))
         .route("/api/runs/:scenario_name", get(routes::get_runs))
         .route("/assets/*file", get(static_handler))
         .fallback(spa_fallback)
         .with_state(db.clone())
-
-    // let serve_assets = ServeEmbed::<Assets>::new();
-    // Router::new().nest_service("/", serve_assets)
-    // .layer(
-    //     CorsLayer::new()
-    //         .allow_methods([Method::GET, Method::POST])
-    //         .allow_origin(Any),
-    // )
 }
 
 pub async fn start(port: u32, db: &DatabaseConnection) -> anyhow::Result<()> {
