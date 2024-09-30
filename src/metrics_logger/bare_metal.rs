@@ -33,11 +33,10 @@ pub async fn keep_logging(
     metrics_log: Arc<Mutex<MetricsLog>>,
 ) -> anyhow::Result<()> {
     let mut system = System::new_all();
-    system.refresh_all();
 
     loop {
-        system.refresh_all();
         tokio::time::sleep(Duration::from_millis(1000)).await;
+        system.refresh_all();
         for process_to_observe in processes_to_observe.iter() {
             match process_to_observe {
                 ProcessToObserve::ExternalPid(pid) => {
@@ -69,17 +68,11 @@ fn update_metrics_log(metrics: CpuMetrics, metrics_log: &Arc<Mutex<MetricsLog>>)
 }
 
 async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics> {
-    // refresh system information
-    // system.refresh_all();
-
     if let Some(process) = system.process(Pid::from_u32(pid)) {
-        let core_count = num_cpus::get() as i32;
+        let core_count = num_cpus::get_physical() as i32;
+
         // Cores can be 0, or system can be wrong, therefore divide here
-        let cpu_usage = if core_count > 0 {
-            (process.cpu_usage() as f64) / (core_count as f64)
-        } else {
-            process.cpu_usage() as f64
-        };
+        let cpu_usage = process.cpu_usage() as f64 / 100.0;
         let timestamp = Utc::now().timestamp_millis();
         // Updated, .name just gives "bash" etc, short version
         // .exe gives proper path

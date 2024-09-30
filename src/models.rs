@@ -18,7 +18,7 @@ pub fn rab_model(ci_g_w: f32) -> impl Fn(&Vec<&Metrics>, &Power) -> Data {
             .map(|(x, y)| {
                 match *power {
                     Power::Curve(a, b, c, d) => {
-                        let cpu_util = 0.5 * (x.cpu_usage + y.cpu_usage);
+                        let cpu_util = 0.5 * (x.cpu_usage + y.cpu_usage) * 100.0;
                         let delta_t_h = (x.time_stamp - y.time_stamp) as f64 / 3_600_00.0;
 
                         // boa_model(a, b, c, d)(cpu_util * delta_t_h)

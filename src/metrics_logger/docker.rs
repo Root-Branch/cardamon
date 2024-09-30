@@ -6,7 +6,6 @@ use chrono::Utc;
 use futures_util::stream::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use sysinfo::System;
 use tracing::{debug, error, warn};
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is
@@ -61,47 +60,46 @@ pub async fn keep_logging(
         }
     }
 
-    loop {
-        // Only running containers, we re-try in a second if the container is not running yet
-        let mut filter = HashMap::new();
-        filter.insert(String::from("status"), vec![String::from("running")]);
-        filter.insert(String::from("name"), container_names.clone());
-        debug!("Listing containers with filter: {:?}", filter);
+    // Only running containers, we re-try in a second if the container is not running yet
+    let mut filter = HashMap::new();
+    filter.insert(String::from("status"), vec![String::from("running")]);
+    filter.insert(String::from("name"), container_names.clone());
+    debug!("Listing containers with filter: {:?}", filter);
 
-        let container_list = docker
-            .list_containers(Some(ListContainersOptions {
-                all: true,
-                filters: filter,
-                ..Default::default()
-            }))
-            .await;
+    let container_list = docker
+        .list_containers(Some(ListContainersOptions {
+            all: true,
+            filters: filter,
+            ..Default::default()
+        }))
+        .await;
 
-        let containers = match container_list {
-            Ok(containers) => {
-                debug!(
-                    "Successfully listed containers. Count: {}",
-                    containers.len()
-                );
-                containers
-            }
-            Err(e) => {
-                error!("Failed to list containers: {}", e);
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                continue;
-            }
-        };
-
-        // Wait 1s and re-try, this is not an error, containers take a while to spin up
-        if containers.is_empty() {
-            warn!("No running containers");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            continue;
+    let containers = match container_list {
+        Ok(containers) => {
+            debug!(
+                "Successfully listed containers. Count: {}",
+                containers.len()
+            );
+            containers
         }
-        let mut sys = System::new_all();
-        sys.refresh_cpu_all();
-        let core_count = num_cpus::get();
+        Err(e) => {
+            error!("Failed to list containers: {}", e);
+            return;
+            // tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            // continue;
+        }
+    };
 
-        for container in containers {
+    // Wait 1s and re-try, this is not an error, containers take a while to spin up
+    if containers.is_empty() {
+        warn!("No running containers");
+        return;
+        // tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // continue;
+    }
+
+    loop {
+        for container in &containers {
             if let Some(container_id) = container.id.as_ref() {
                 let container_name_with_slash = container
                     .names
@@ -123,12 +121,8 @@ pub async fn keep_logging(
 
                 match docker_stats {
                     Some(Ok(stats)) => {
-                        let cpu_metrics = calculate_cpu_metrics(
-                            container_id,
-                            container_name.to_string(),
-                            &stats,
-                            &core_count,
-                        );
+                        let cpu_metrics =
+                            calculate_cpu_metrics(container_id, container_name.to_string(), &stats);
                         debug!(
                             "Pushing metrics to metrics log form container name/s {:?}",
                             container.names
@@ -150,30 +144,17 @@ pub async fn keep_logging(
                 }
             }
         }
-
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 }
 
-fn calculate_cpu_metrics(
-    container_id: &str,
-    container_name: String,
-    stats: &Stats,
-    core_count: &usize,
-) -> CpuMetrics {
+fn calculate_cpu_metrics(container_id: &str, container_name: String, stats: &Stats) -> CpuMetrics {
+    let core_count = stats.cpu_stats.online_cpus.unwrap_or(0);
     let cpu_delta =
         stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
     let system_delta = stats.cpu_stats.system_cpu_usage.unwrap_or(0)
         - stats.precpu_stats.system_cpu_usage.unwrap_or(0);
     let cpu_usage = if system_delta > 0 {
-        (cpu_delta as f64 / system_delta as f64)
-            * 100.0
-            * stats.cpu_stats.online_cpus.unwrap_or(1) as f64
-    } else {
-        0.0
-    };
-    let cpu_usage = if cpu_usage != 0.0 {
-        cpu_usage / *core_count as f64
+        (cpu_delta as f64 / system_delta as f64) * core_count as f64
     } else {
         0.0
     };
@@ -184,8 +165,8 @@ fn calculate_cpu_metrics(
     CpuMetrics {
         process_id: container_id.to_string(),
         process_name: container_name,
-        cpu_usage: cpu_usage / *core_count as f64,
-        core_count: stats.cpu_stats.online_cpus.unwrap_or(1) as i32,
+        cpu_usage,
+        core_count: core_count as i32,
         timestamp: Utc::now().timestamp_millis(),
     }
 }

@@ -271,7 +271,6 @@ impl DatasetBuilderFinal {
 
     async fn all(&self, db: &DatabaseConnection) -> anyhow::Result<Dataset> {
         let (scenarios, total_scenarios) = self.fetch_scenarios(db).await?;
-        println!("\n [DatasetBuilderFinal::all] scenarios: {:?}", scenarios);
 
         let (iterations, total_runs) = match self.run_selection {
             RunSelection::All => {

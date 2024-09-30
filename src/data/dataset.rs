@@ -109,8 +109,6 @@ impl<'a> Dataset {
             .map(|x| &x.iteration.scenario_name)
             .unique();
 
-        // let poop = unique_scenario_names.clone().collect_vec();
-        // println!("unique names = {:?}", poop);
         let scenario_names = match live_data_filter {
             LiveDataFilter::IncludeLive => unique_scenario_names.collect_vec(),
             LiveDataFilter::ExcludeLive => unique_scenario_names
@@ -121,7 +119,7 @@ impl<'a> Dataset {
                 .collect_vec(),
         };
 
-        let poopy = scenario_names
+        scenario_names
             .into_iter()
             .map(|scenario_name| {
                 let data = self
@@ -135,10 +133,7 @@ impl<'a> Dataset {
                     data,
                 }
             })
-            .collect::<Vec<_>>();
-
-        // println!("poopy = {:?}", poopy);
-        poopy
+            .collect::<Vec<_>>()
     }
 }
 
