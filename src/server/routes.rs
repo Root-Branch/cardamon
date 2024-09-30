@@ -214,14 +214,6 @@ pub async fn get_runs(
         Pages::Required(pages) => pages,
     };
 
-    let poop = dataset
-        .by_scenario(LiveDataFilter::IncludeLive)
-        .get(0)
-        .unwrap()
-        .by_run()
-        .len();
-    trace!("{:?}", poop);
-
     let mut runs = vec![];
     for scenario_dataset in &dataset.by_scenario(LiveDataFilter::IncludeLive) {
         for run_dataset in scenario_dataset.by_run() {
@@ -236,6 +228,9 @@ pub async fn get_runs(
                 })
                 .collect_vec();
 
+            let json_str = serde_json::to_string_pretty(&processes);
+            println!("processes json\n{:?}", json_str);
+
             runs.push(RunResponse {
                 start_time: model_data.start_time,
                 duration: model_data.duration(),
@@ -245,6 +240,65 @@ pub async fn get_runs(
             });
         }
     }
+
+    //  [
+    //      {
+    //          "processName": "test_proc2",
+    //          "powContribPerc": 0.4519876956171197,
+    //          "iterationMetrics": [
+    //              [
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441041385, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441042392, "cpu_usage": 0.061349693685770035 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441043401, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441044408, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441045415, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441046422, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441047430, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441048438, "cpu_usage": 0.06265664100646973 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441049446, "cpu_usage": 0.0 }
+    //              ],
+    //              [
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441031363, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441032371, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441033378, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441034387, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441035395, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441036403, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441037411, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441038418, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc2", "timestamp": 1727441039425, "cpu_usage": 0.0 }
+    //              ]
+    //          ]
+    //      },
+    //      {
+    //          "processName": "test_proc1",
+    //          "powContribPerc": 0.5480123043828803,
+    //          "iterationMetrics": [
+    //              [
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441041385, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441042392, "cpu_usage": 1.1042945384979248 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441043401, "cpu_usage": 1.1904761791229248 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441044408, "cpu_usage": 1.0664993524551392 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441045415, "cpu_usage": 1.1313639879226685 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441046422, "cpu_usage": 1.1335012912750244 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441047430, "cpu_usage": 1.1285266876220703 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441048438, "cpu_usage": 1.127819538116455 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441049446, "cpu_usage": 1.1271133422851562 }
+    //              ],
+    //              [
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441031363, "cpu_usage": 0.0 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441032371, "cpu_usage": 1.0 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441033378, "cpu_usage": 1.1 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441034387, "cpu_usage": 1.1 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441035395, "cpu_usage": 1.1 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441036403, "cpu_usage": 1.1 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441037411, "cpu_usage": 1.1 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441038418, "cpu_usage": 1.1 },
+    //                  { "proc_id": "test_proc1", "timestamp": 1727441039425, "cpu_usage": 1.1 }
+    //              ]
+    //          ]
+    //      }
+    //  ]
 
     Ok(Json(RunsResponse {
         runs,

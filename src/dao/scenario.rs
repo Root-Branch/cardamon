@@ -133,6 +133,7 @@ pub async fn fetch_in_range(
     }
 }
 
+// VERIFIED
 pub async fn fetch_by_query(
     name: &str,
     page: &Option<Page>,
@@ -143,8 +144,10 @@ pub async fn fetch_by_query(
         .select_only()
         .select_column(iteration::Column::ScenarioName)
         .distinct()
-        .filter(iteration::Column::ScenarioName.like(name))
+        .filter(iteration::Column::ScenarioName.like(format!("%{}%", name)))
         .order_by_desc(iteration::Column::StartTime);
+
+    println!("\n [QUERY] {:?}", query.build(DatabaseBackend::Sqlite).sql);
 
     match page {
         Some(page) => {
@@ -164,151 +167,5 @@ pub async fn fetch_by_query(
             let res = query.into_partial_model().all(db).await?;
             Ok((res, Pages::NotRequired))
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder},
-        db_connect, db_migrate,
-        tests::setup_fixtures,
-    };
-
-    #[tokio::test]
-    async fn building_dataset_for_single_scenario() -> anyhow::Result<()> {
-        let db = db_connect("sqlite::memory:", None).await?;
-        db_migrate(&db).await?;
-        setup_fixtures(
-            &[
-                "./fixtures/power_curves.sql",
-                "./fixtures/cpus.sql",
-                "./fixtures/runs.sql",
-                "./fixtures/iterations.sql",
-            ],
-            &db,
-        )
-        .await?;
-
-        let builder = DatasetBuilder::new();
-        let b01 = builder.scenario("scenario_3").all().runs_all().all();
-        let dataset = b01.build(&db).await?;
-        for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
-            let run_datasets = scenario_dataset.by_run();
-            assert_eq!(run_datasets.len(), 3);
-
-            assert_eq!(run_datasets.get(0).unwrap().run_id(), 3);
-            assert_eq!(run_datasets.get(1).unwrap().run_id(), 2);
-            assert_eq!(run_datasets.get(2).unwrap().run_id(), 1);
-        }
-
-        let b02 = builder
-            .scenario("scenario_3")
-            .all()
-            .runs_in_range(0, 1717507699000)
-            .all();
-        let dataset = b02.build(&db).await?;
-        for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
-            let run_datasets = scenario_dataset.by_run();
-            assert_eq!(run_datasets.len(), 2);
-
-            assert_eq!(run_datasets.get(0).unwrap().run_id(), 2);
-            assert_eq!(run_datasets.get(1).unwrap().run_id(), 1);
-        }
-
-        let b03 = builder.scenario("scenario_3").all().last_n_runs(1).all();
-        let dataset = b03.build(&db).await?;
-        for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
-            let run_datasets = scenario_dataset.by_run();
-            assert_eq!(run_datasets.len(), 1);
-
-            assert_eq!(run_datasets.get(0).unwrap().run_id(), 3);
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn build_dataset_for_all_scenarios() -> anyhow::Result<()> {
-        let db = db_connect("sqlite::memory:", None).await?;
-        db_migrate(&db).await?;
-        setup_fixtures(
-            &[
-                "./fixtures/power_curves.sql",
-                "./fixtures/cpus.sql",
-                "./fixtures/runs.sql",
-                "./fixtures/iterations.sql",
-            ],
-            &db,
-        )
-        .await?;
-
-        let builder = DatasetBuilder::new();
-        let b04 = builder.scenarios_all().all().runs_all().all();
-        let dataset = b04.build(&db).await?;
-        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        assert_eq!(
-            scenario_datasets.get(0).unwrap().scenario_name(),
-            "scenario_3"
-        );
-        assert_eq!(
-            scenario_datasets.get(1).unwrap().scenario_name(),
-            "scenario_2"
-        );
-        assert_eq!(
-            scenario_datasets.get(2).unwrap().scenario_name(),
-            "scenario_1"
-        );
-
-        let b05 = builder
-            .scenarios_all()
-            .all()
-            .runs_in_range(0, 1717507699000)
-            .all();
-        let dataset = b05.build(&db).await?;
-        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        assert_eq!(
-            scenario_datasets.get(0).unwrap().scenario_name(),
-            "scenario_3"
-        );
-        assert_eq!(scenario_datasets.get(0).unwrap().by_run().len(), 2);
-        assert_eq!(
-            scenario_datasets.get(1).unwrap().scenario_name(),
-            "scenario_2"
-        );
-        assert_eq!(scenario_datasets.get(1).unwrap().by_run().len(), 2);
-
-        let b06 = builder.scenarios_all().all().last_n_runs(1).all();
-        let dataset = b06.build(&db).await?;
-        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        assert_eq!(
-            scenario_datasets.get(0).unwrap().scenario_name(),
-            "scenario_3"
-        );
-        assert_eq!(scenario_datasets.get(0).unwrap().by_run().len(), 1);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn build_dataset_for_scenarios_in_run() -> anyhow::Result<()> {
-        let builder = DatasetBuilder::new();
-        let b07 = builder.scenarios_in_run(1).all().runs_all().all();
-        let b08 = builder.scenarios_in_run(1).all().runs_in_range(0, 1).all();
-        let b09 = builder.scenarios_in_run(1).all().last_n_runs(1).all();
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn build_dataset_for_scenarios_by_name() -> anyhow::Result<()> {
-        let builder = DatasetBuilder::new();
-        let b10 = builder.scenarios_by_name("").all().runs_all().all();
-        let b11 = builder
-            .scenarios_by_name("")
-            .all()
-            .runs_in_range(0, 1)
-            .all();
-        let b12 = builder.scenarios_by_name("").all().last_n_runs(1).all();
-        Ok(())
     }
 }

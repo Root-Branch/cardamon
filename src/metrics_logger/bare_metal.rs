@@ -193,7 +193,6 @@ mod tests {
         // create a new sysinfo system
         let mut system = System::new_all();
         system.refresh_all();
-        system.refresh_all();
 
         // gather metrics for a little while
         let mut metrics_log = vec![];

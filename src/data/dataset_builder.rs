@@ -271,9 +271,14 @@ impl DatasetBuilderFinal {
 
     async fn all(&self, db: &DatabaseConnection) -> anyhow::Result<Dataset> {
         let (scenarios, total_scenarios) = self.fetch_scenarios(db).await?;
+        println!("\n [DatasetBuilderFinal::all] scenarios: {:?}", scenarios);
 
         let (iterations, total_runs) = match self.run_selection {
-            RunSelection::All => dao::iteration::fetch_runs_all(&scenarios, None, db).await,
+            RunSelection::All => {
+                let poop = dao::iteration::fetch_runs_all(&scenarios, None, db).await;
+                // println!("\n {:?}", poop);
+                poop
+            }
 
             RunSelection::InRange { from, to } => {
                 dao::iteration::fetch_runs_in_range(&scenarios, from, to, None, db).await
@@ -292,6 +297,7 @@ impl DatasetBuilderFinal {
                 dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, db).await?;
             iterations_with_metrics.push(IterationMetrics::new(it, metrics));
         }
+        // println!("\n {:?}", iterations_with_metrics);
 
         // TODO: cache the iterations/metrics data
         //
@@ -343,5 +349,366 @@ impl DatasetBuilderFinal {
             Some(page) => self.page(page, db).await,
             None => self.all(db).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder},
+        db_connect, db_migrate,
+        tests::setup_fixtures,
+    };
+    use itertools::Itertools;
+    use sea_orm::DatabaseConnection;
+
+    async fn init_tests() -> anyhow::Result<DatabaseConnection> {
+        let db = db_connect("sqlite::memory:", None).await?;
+        db_migrate(&db).await?;
+        setup_fixtures(
+            &[
+                "./fixtures/power_curves.sql",
+                "./fixtures/cpus.sql",
+                "./fixtures/runs.sql",
+                "./fixtures/iterations.sql",
+            ],
+            &db,
+        )
+        .await?;
+
+        Ok(db)
+    }
+
+    #[tokio::test]
+    async fn scenarios_all() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+        let dataset = DatasetBuilder::new()
+            .scenarios_all()
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be 3 scenarios in reverse chronological order
+        // i.e. [scenario_3, scenario_2, scenario_1]
+        let scenario_names = scenario_datasets
+            .iter()
+            .map(|dataset| dataset.scenario_name())
+            .collect_vec();
+        assert_eq!(
+            scenario_names,
+            vec!["scenario_3", "scenario_2", "scenario_1"]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scenario() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+        let dataset = DatasetBuilder::new()
+            .scenario("scenario_2")
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be one scenario (the one we selected) in reverse chronological order
+        // ie. [scenario_2]
+        let scenario_names = scenario_datasets
+            .iter()
+            .map(|dataset| dataset.scenario_name())
+            .collect_vec();
+        assert_eq!(scenario_names, vec!["scenario_2"]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scenarios_in_run() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+        let dataset = DatasetBuilder::new()
+            .scenarios_in_run(2)
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be two scenarios (the ones in run 2) in reverse chronological order
+        // ie. [scenario_3, scenario_2]
+        let scenario_names = scenario_datasets
+            .iter()
+            .map(|dataset| dataset.scenario_name())
+            .collect_vec();
+        assert_eq!(scenario_names, vec!["scenario_3", "scenario_2"]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scenarios_in_range() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+        let dataset = DatasetBuilder::new()
+            .scenarios_in_range(1717507690000, 1717507699000)
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be two scenarios (the ones in the given time range) in reverse
+        // chronological order
+        // ie. [scenario_3, scenario_2]
+        let scenario_names = scenario_datasets
+            .iter()
+            .map(|dataset| dataset.scenario_name())
+            .collect_vec();
+        assert_eq!(scenario_names, vec!["scenario_3", "scenario_2"]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn scenarios_search() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+        let dataset = DatasetBuilder::new()
+            .scenarios_by_name("scenario")
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be three scenarios (all matching "scenario") in reverse chronological order
+        // ie. [scenario_3, scenario_2, scenario_1]
+        let scenario_names = scenario_datasets
+            .iter()
+            .map(|dataset| dataset.scenario_name())
+            .collect_vec();
+        assert_eq!(
+            scenario_names,
+            vec!["scenario_3", "scenario_2", "scenario_1"]
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn runs_all() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+
+        // single scenario
+        let dataset = DatasetBuilder::new()
+            .scenario("scenario_3")
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+
+        // there should be three runs for scenario 3 returned in reverse chronological order
+        // ie. [3, 2, 1]
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(run_ids, vec![3, 2, 1]);
+
+        // multiple scenarios
+        let dataset = DatasetBuilder::new()
+            .scenarios_all()
+            .all()
+            .runs_all()
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be 3 runs for scenario_3, 2 for scenario_2 and 1 for scenario_1 in reverse
+        // chronological order
+        // ie. scenario_3 = [3,2,1], scenario_2 = [2,1], scenario_1 = [1]
+        let scenario_dataset = scenario_datasets.get(0).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_3");
+        assert_eq!(run_ids, vec![3, 2, 1]);
+
+        let scenario_dataset = scenario_datasets.get(1).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_2");
+        assert_eq!(run_ids, vec![2, 1]);
+
+        let scenario_dataset = scenario_datasets.get(2).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_1");
+        assert_eq!(run_ids, vec![1]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn runs_in_range() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+
+        // single scenario
+        let dataset = DatasetBuilder::new()
+            .scenario("scenario_3")
+            .all()
+            .runs_in_range(1717507690000, 1717507795000)
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+
+        // there should be 2 runs for scenario 3 returned in reverse chronological order
+        // ie. [3, 2]
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(run_ids, vec![3, 2]);
+
+        // multiple scenarios
+        let dataset = DatasetBuilder::new()
+            .scenarios_all()
+            .all()
+            .runs_in_range(1717507690000, 1717507795000)
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be 2 runs for scenario_3 and 1 for scenario_2 in reverse chronological order
+        // ie. scenario_3 = [3,2], scenario_2 = [2]
+        let scenario_dataset = scenario_datasets.get(0).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_3");
+        assert_eq!(run_ids, vec![3, 2]);
+
+        let scenario_dataset = scenario_datasets.get(1).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_2");
+        assert_eq!(run_ids, vec![2]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn runs_last_n() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+
+        // single scenario
+        let dataset = DatasetBuilder::new()
+            .scenario("scenario_3")
+            .all()
+            .last_n_runs(2)
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+
+        // there should be 2 runs for scenario 3 returned in reverse chronological order
+        // ie. [3, 2]
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(run_ids, vec![3, 2]);
+
+        // multiple scenarios
+        let dataset = DatasetBuilder::new()
+            .scenarios_all()
+            .all()
+            .last_n_runs(2)
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+
+        // there should be 2 runs for scenario_3, 2 for scenario_2 and 1 for scenario_1 in reverse chronological order
+        // ie. scenario_3 = [3,2], scenario_2 = [2,1], scenario_1 = [1]
+        let scenario_dataset = scenario_datasets.get(0).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_3");
+        assert_eq!(run_ids, vec![3, 2]);
+
+        let scenario_dataset = scenario_datasets.get(1).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_2");
+        assert_eq!(run_ids, vec![2, 1]);
+
+        let scenario_dataset = scenario_datasets.get(2).unwrap();
+        let run_datasets = scenario_dataset.by_run();
+        let run_ids = run_datasets
+            .iter()
+            .map(|dataset| dataset.run_id())
+            .collect_vec();
+        assert_eq!(scenario_dataset.scenario_name(), "scenario_1");
+        assert_eq!(run_ids, vec![1]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn iterations() -> anyhow::Result<()> {
+        let db = init_tests().await?;
+
+        // single scenario
+        let dataset = DatasetBuilder::new()
+            .scenario("scenario_3")
+            .all()
+            .last_n_runs(1)
+            .all()
+            .build(&db)
+            .await?;
+        let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
+        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+        let run_dataset = run_datasets.get(0).unwrap();
+
+        // there should be three runs for scenario 3 returned in reverse chronological order
+        // ie. [3]
+        let iteration_metrics = run_dataset.by_iteration();
+        assert_eq!(iteration_metrics.len(), 3);
+
+        Ok(())
     }
 }

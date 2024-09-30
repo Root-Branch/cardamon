@@ -26,7 +26,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::Path,
-    process::exit,
+    process::{exit, Command},
     time::Duration,
 };
 use subprocess::{Exec, NullFile, Redirection};
@@ -254,7 +254,17 @@ fn shutdown_application(running_processes: &Vec<ProcessToObserve>) -> anyhow::Re
             } => {
                 print!("> stopping process {}", process_name.green());
 
-                let res = run_command_detached(&down, None);
+                // let res = run_command_detached(&down, None);
+
+                let words = shlex::split(&down).expect("Command string is not POSIX compliant.");
+                let res = match &words[..] {
+                    [command, args @ ..] => Command::new(command)
+                        .args(args)
+                        .output()
+                        .map_err(anyhow::Error::from),
+                    _ => Err(anyhow::anyhow!("Whoops no command!")),
+                };
+
                 if res.is_err() {
                     let err = res.unwrap_err();
                     tracing::warn!(
@@ -567,6 +577,11 @@ pub async fn run<'a>(
             println!("\t{}", format!("- {}", proc.up).bright_black());
         }
     }
+
+    print!("> waiting for application to settle");
+    std::io::stdout().flush()?;
+    tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+    println!(" {}", "\t✓".green());
 
     let start_time = Utc::now().timestamp_millis();
     let is_live = match exec_plan.execution_mode {

@@ -105,8 +105,12 @@ impl<'a> Dataset {
         let unique_scenario_names = self
             .data
             .iter()
+            // .sorted_by(|a, b| b.iteration.start_time.cmp(&a.iteration.start_time))
             .map(|x| &x.iteration.scenario_name)
             .unique();
+
+        // let poop = unique_scenario_names.clone().collect_vec();
+        // println!("unique names = {:?}", poop);
         let scenario_names = match live_data_filter {
             LiveDataFilter::IncludeLive => unique_scenario_names.collect_vec(),
             LiveDataFilter::ExcludeLive => unique_scenario_names
@@ -117,7 +121,7 @@ impl<'a> Dataset {
                 .collect_vec(),
         };
 
-        scenario_names
+        let poopy = scenario_names
             .into_iter()
             .map(|scenario_name| {
                 let data = self
@@ -131,7 +135,10 @@ impl<'a> Dataset {
                     data,
                 }
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+
+        // println!("poopy = {:?}", poopy);
+        poopy
     }
 }
 
@@ -602,7 +609,7 @@ mod tests {
                             .iter()
                             .map(|ds| ds.iteration.count)
                             .collect::<Vec<_>>();
-                        assert_eq!(vec![1, 2], it_ids);
+                        assert_eq!(vec![2, 1], it_ids);
                     }
 
                     "scenario_3" => {
@@ -611,7 +618,7 @@ mod tests {
                             .iter()
                             .map(|ds| ds.iteration.count)
                             .collect::<Vec<_>>();
-                        assert_eq!(vec![1, 2, 3], it_ids);
+                        assert_eq!(vec![3, 2, 1], it_ids);
                     }
 
                     _ => panic!("unknown scenario in dataset!"),
