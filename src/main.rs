@@ -186,9 +186,9 @@ async fn main() -> anyhow::Result<()> {
                     true => "--".bright_black(),
                     false => {
                         if trend > 0.0 {
-                            format!("↓ {:.3}Wh", trend).green()
-                        } else {
                             format!("↑ {:.3}Wh", trend.abs()).red()
+                        } else {
+                            format!("↓ {:.3}Wh", trend).green()
                         }
                     }
                 };
