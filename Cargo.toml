@@ -48,6 +48,7 @@ http = "1.1.0"
 itertools = "0.13.0"
 mime_guess = { version = "2.0.5" }
 num_cpus = "1.16.0"
+phf = { version = "0.11", features = ["macros"] }
 reqwest = { version = "0.12.7", features = ["json"] }
 rust-embed = "8.5.0"
 sea-orm = { version = "1.0.0", features = [

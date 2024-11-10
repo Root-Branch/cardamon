@@ -38,15 +38,12 @@ impl std::ops::Add<Data> for Data {
 }
 impl Data {
     pub fn sum(data: &[&Data]) -> Self {
-        data.into_iter()
-            .fold(Data::default(), |acc, item| acc + *item)
+        data.iter().fold(Data::default(), |acc, item| acc + *item)
     }
 
     pub fn mean(data: &[&Data]) -> Self {
         let len = data.len() as f64;
-        let mut data = data
-            .into_iter()
-            .fold(Data::default(), |acc, item| acc + *item);
+        let mut data = data.iter().fold(Data::default(), |acc, item| acc + *item);
 
         data.pow /= len;
         data.co2 /= len;

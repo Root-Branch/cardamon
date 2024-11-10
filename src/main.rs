@@ -1,5 +1,6 @@
 use anyhow::Context;
 use cardamon::{
+    carbon_intensity::{fetch_ci, fetch_region_code, valid_region_code, GLOBAL_CI},
     cleanup_stdout_stderr,
     config::{self, Config, ExecutionPlan, ProcessToObserve},
     data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder, Data},
@@ -33,6 +34,9 @@ pub enum Commands {
     Run {
         #[arg(help = "Please provide an observation name")]
         name: String,
+
+        #[arg(value_name = "REGION", short, long)]
+        region: Option<String>,
 
         #[arg(value_name = "EXTERNAL PIDs", short, long, value_delimiter = ',')]
         pids: Option<Vec<String>>,
@@ -134,13 +138,78 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Run {
             name,
+            region,
             pids,
             containers,
             external_only,
         } => {
-            println!("\n{}", " Cardamon ".reversed().green());
             let config = load_config(&args.file)
                 .context("Error loading configuration, please run `cardamon init`")?;
+
+            let now = Utc::now();
+
+            let region_code = match region {
+                None => {
+                    print!("> fetching region from IP address");
+                    match fetch_region_code().await {
+                        Err(err) => {
+                            println!("\t{}", "✗".red());
+                            println!("\t{}", format!("- {}", err).bright_black());
+                            None
+                        }
+
+                        Ok(code) => {
+                            println!("\t{}", "✓".green());
+                            println!(
+                                "\t{}",
+                                format!("- using region code {}", code).bright_black()
+                            );
+                            Some(code)
+                        }
+                    }
+                }
+
+                Some(code) => {
+                    print!("> validating region code");
+                    if valid_region_code(&code) {
+                        println!("\t{}", "✓".green());
+                        Some(code)
+                    } else {
+                        println!("\t{}", "✗".red());
+                        None
+                    }
+                }
+            };
+
+            let ci = match &region_code {
+                Some(code) => {
+                    print!("> fetching carbon intensity for {}", code);
+                    match fetch_ci(&code, &now).await {
+                        Ok(ci) => {
+                            println!("\t{}", "✓".green());
+                            println!(
+                                "\t{}",
+                                format!("- using {:.3} gWh CO2eq", ci).bright_black()
+                            );
+                            ci
+                        }
+
+                        Err(_) => {
+                            println!("\t{}", "✗".red());
+                            println!("\t{}", "- using global avg 0.494 gWh CO2eq".bright_black());
+                            GLOBAL_CI
+                        }
+                    }
+                }
+
+                None => {
+                    print!(
+                        "> using global avg carbon intensity {} gWh CO2eq",
+                        "0.494".green()
+                    );
+                    GLOBAL_CI
+                }
+            };
 
             // create an execution plan
             let cpu = config.cpu.clone();
@@ -153,7 +222,7 @@ async fn main() -> anyhow::Result<()> {
             cleanup_stdout_stderr()?;
 
             // run it!
-            let observation_dataset_rows = run(execution_plan, &db_conn).await?;
+            let observation_dataset_rows = run(execution_plan, region_code, ci, &db_conn).await?;
             let observation_dataset = observation_dataset_rows
                 .last_n_runs(5)
                 .all()
@@ -168,16 +237,15 @@ async fn main() -> anyhow::Result<()> {
                 let run_datasets = scenario_dataset.by_run();
 
                 // execute model for current run
-                let f = rab_model(0.16);
                 let (head, tail) = run_datasets
                     .split_first()
                     .expect("Dataset does not include recent run.");
-                let run_data = head.apply_model(&db_conn, &f).await?;
+                let run_data = head.apply_model(&db_conn, &rab_model).await?;
 
                 // execute model for previous runs and calculate trend
                 let mut tail_data = vec![];
                 for run_dataset in tail {
-                    let run_data = run_dataset.apply_model(&db_conn, &f).await?;
+                    let run_data = run_dataset.apply_model(&db_conn, &rab_model).await?;
                     tail_data.push(run_data.data);
                 }
                 let tail_data = Data::mean(&tail_data.iter().collect_vec());
@@ -193,10 +261,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                 };
 
-                println!(
-                    "{}:",
-                    format!("{}", scenario_dataset.scenario_name()).green()
-                );
+                println!("{}:", scenario_dataset.scenario_name().to_string().green());
 
                 let table = Table::builder()
                     .rows(rows![
@@ -242,11 +307,10 @@ async fn main() -> anyhow::Result<()> {
                 println!("\nno data found!");
             }
 
-            let f = rab_model(0.16);
             for scenario_dataset in dataset.by_scenario(LiveDataFilter::IncludeLive) {
                 println!(
                     "Scenario {}:",
-                    format!("{}", scenario_dataset.scenario_name()).green()
+                    scenario_dataset.scenario_name().to_string().green()
                 );
 
                 let mut table = Table::builder()
@@ -262,7 +326,7 @@ async fn main() -> anyhow::Result<()> {
                 // let mut points: Vec<(f32, f32)> = vec![];
                 // let mut run = 0.0;
                 for run_dataset in scenario_dataset.by_run() {
-                    let run_data = run_dataset.apply_model(&db_conn, &f).await?;
+                    let run_data = run_dataset.apply_model(&db_conn, &rab_model).await?;
                     let run_start_time = Utc.timestamp_opt(run_data.start_time / 1000, 0).unwrap();
                     let run_duration = (run_data.stop_time - run_data.start_time) as f64 / 1000.0;
                     let _per_min_factor = 60.0 / run_duration;

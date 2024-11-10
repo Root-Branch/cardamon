@@ -1,0 +1,68 @@
+# CPU
+# ########################################
+[cpu]
+name = "AMD Ryzen 7 PRO 6850U with Radeon Graphics"
+curve = [
+  7.627190097500079,
+  0.07551567953624883,
+  20.45110313049153,
+  -1.5261422759740344,
+]
+
+# Processes
+# ########################################
+[[process]]
+name = "rand-api"
+up = "./rand-api"
+down = "kill {pid}"
+redirect.to = "file"
+process.type = "baremetal"
+
+[[process]]
+name = "rand-api-docker"
+up = "docker run -d --name c1 -p 4244:4243 rand-api"
+down = "bash -c 'docker stop c1 && docker rm c1'"
+redirect.to = "file"
+process.type = "docker"
+process.containers = ["c1"]
+
+# Scenarios
+# ########################################
+[[scenario]]
+name = "stress"
+desc = ""
+command = "sh scenario.sh"
+iterations = 2
+processes = ["rand-api", "rand-api-docker"]
+
+[[scenario]]
+name = "stress_metal"
+desc = ""
+command = "sh scenario.sh"
+iterations = 2
+processes = ["rand-api"]
+
+[[scenario]]
+name = "stress_docker"
+desc = ""
+command = "sh scenario.sh"
+iterations = 2
+processes = ["rand-api-docker"]
+
+# Observations
+# ########################################
+[[observation]]
+name = "stress"
+scenarios = ["stress"]
+
+[[observation]]
+name = "stress_metal"
+scenarios = ["stress_metal"]
+
+[[observation]]
+name = "stress_docker"
+scenarios = ["stress_docker"]
+
+[[observation]]
+name = "live_monitor"
+processes = ["test_proc1", "test_proc2"]

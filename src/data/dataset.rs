@@ -185,7 +185,7 @@ impl<'a> ScenarioDataset<'a> {
     pub async fn apply_model(
         &'a self,
         db: &DatabaseConnection,
-        model: &impl Fn(&Vec<&Metrics>, &Power) -> Data,
+        model: &impl Fn(&Vec<&Metrics>, &Power, f64) -> Data,
         aggregation_method: AggregationMethod,
     ) -> anyhow::Result<ScenarioData> {
         let mut all_run_data = vec![];
@@ -265,9 +265,9 @@ impl<'a> ScenarioRunDataset<'a> {
     pub async fn apply_model(
         &'a self,
         db: &DatabaseConnection,
-        model: &impl Fn(&Vec<&Metrics>, &Power) -> Data,
+        model: &impl Fn(&Vec<&Metrics>, &Power, f64) -> Data,
     ) -> anyhow::Result<RunData> {
-        let run = dao::run::fetch(self.run_id, &db).await?;
+        let run = dao::run::fetch(self.run_id, db).await?;
         let cpu = run
             .find_related(entities::cpu::Entity)
             .one(db)
@@ -301,7 +301,7 @@ impl<'a> ScenarioRunDataset<'a> {
         for scenario_run_iteration_dataset in self.by_iteration() {
             for (proc_id, metrics) in scenario_run_iteration_dataset.by_process() {
                 // run the RAB model to get power and co2 emissions
-                let cardamon_data = model(&metrics, &power);
+                let cardamon_data = model(&metrics, &power, run.carbon_intensity);
 
                 // convert the metrics database model into metrics data
                 let proc_metrics = metrics

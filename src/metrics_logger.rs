@@ -60,9 +60,7 @@ impl StopHandle {
 ///
 /// A `Result` containing the metrics log for the given scenario or an `Error` if either
 /// the scenario failed to complete successfully or any of the loggers contained errors.
-pub fn start_logging<'a>(
-    processes_to_observe: Vec<ProcessToObserve>,
-) -> anyhow::Result<StopHandle> {
+pub fn start_logging(processes_to_observe: Vec<ProcessToObserve>) -> anyhow::Result<StopHandle> {
     let metrics_log = MetricsLog::new();
     let metrics_log_mutex = Mutex::new(metrics_log);
     let shared_metrics_log = Arc::new(metrics_log_mutex);

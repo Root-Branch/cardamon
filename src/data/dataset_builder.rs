@@ -99,6 +99,12 @@ impl DatasetBuilder {
     }
 }
 
+impl Default for DatasetBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The DatasetRowPager defines an incomplete Dataset which includes set of scenarios (rows)
 /// without any runs.
 ///
@@ -243,7 +249,7 @@ impl DatasetBuilderFinal {
         let (scenario_names, scenario_pages) = match &self.scenario_selection {
             ScenarioSelection::All => dao::scenario::fetch_all(&self.scenario_page, db).await,
             ScenarioSelection::One(name) => {
-                let scenario_name = dao::scenario::fetch(&name, db)
+                let scenario_name = dao::scenario::fetch(name, db)
                     .await?
                     .context(format!("Error finding scenario with name {}", name))?;
 
@@ -251,10 +257,10 @@ impl DatasetBuilderFinal {
                                                               // pages are not required!
             }
             ScenarioSelection::Search(name) => {
-                dao::scenario::fetch_by_query(&name, &self.scenario_page, db).await
+                dao::scenario::fetch_by_query(name, &self.scenario_page, db).await
             }
             ScenarioSelection::InRun(run) => {
-                dao::scenario::fetch_in_run(&run, &self.scenario_page, db).await
+                dao::scenario::fetch_in_run(run, &self.scenario_page, db).await
             }
             ScenarioSelection::InRange { from, to } => {
                 dao::scenario::fetch_in_range(*from, *to, &self.scenario_page, db).await
@@ -273,11 +279,7 @@ impl DatasetBuilderFinal {
         let (scenarios, total_scenarios) = self.fetch_scenarios(db).await?;
 
         let (iterations, total_runs) = match self.run_selection {
-            RunSelection::All => {
-                let poop = dao::iteration::fetch_runs_all(&scenarios, None, db).await;
-                // println!("\n {:?}", poop);
-                poop
-            }
+            RunSelection::All => dao::iteration::fetch_runs_all(&scenarios, None, db).await,
 
             RunSelection::InRange { from, to } => {
                 dao::iteration::fetch_runs_in_range(&scenarios, from, to, None, db).await
@@ -513,7 +515,7 @@ mod tests {
             .build(&db)
             .await?;
         let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+        let run_datasets = scenario_datasets.first().unwrap().by_run();
 
         // there should be three runs for scenario 3 returned in reverse chronological order
         // ie. [3, 2, 1]
@@ -536,7 +538,7 @@ mod tests {
         // there should be 3 runs for scenario_3, 2 for scenario_2 and 1 for scenario_1 in reverse
         // chronological order
         // ie. scenario_3 = [3,2,1], scenario_2 = [2,1], scenario_1 = [1]
-        let scenario_dataset = scenario_datasets.get(0).unwrap();
+        let scenario_dataset = scenario_datasets.first().unwrap();
         let run_datasets = scenario_dataset.by_run();
         let run_ids = run_datasets
             .iter()
@@ -579,7 +581,7 @@ mod tests {
             .build(&db)
             .await?;
         let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+        let run_datasets = scenario_datasets.first().unwrap().by_run();
 
         // there should be 2 runs for scenario 3 returned in reverse chronological order
         // ie. [3, 2]
@@ -601,7 +603,7 @@ mod tests {
 
         // there should be 2 runs for scenario_3 and 1 for scenario_2 in reverse chronological order
         // ie. scenario_3 = [3,2], scenario_2 = [2]
-        let scenario_dataset = scenario_datasets.get(0).unwrap();
+        let scenario_dataset = scenario_datasets.first().unwrap();
         let run_datasets = scenario_dataset.by_run();
         let run_ids = run_datasets
             .iter()
@@ -635,7 +637,7 @@ mod tests {
             .build(&db)
             .await?;
         let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
+        let run_datasets = scenario_datasets.first().unwrap().by_run();
 
         // there should be 2 runs for scenario 3 returned in reverse chronological order
         // ie. [3, 2]
@@ -657,7 +659,7 @@ mod tests {
 
         // there should be 2 runs for scenario_3, 2 for scenario_2 and 1 for scenario_1 in reverse chronological order
         // ie. scenario_3 = [3,2], scenario_2 = [2,1], scenario_1 = [1]
-        let scenario_dataset = scenario_datasets.get(0).unwrap();
+        let scenario_dataset = scenario_datasets.first().unwrap();
         let run_datasets = scenario_dataset.by_run();
         let run_ids = run_datasets
             .iter()
@@ -700,8 +702,8 @@ mod tests {
             .build(&db)
             .await?;
         let scenario_datasets = dataset.by_scenario(LiveDataFilter::IncludeLive);
-        let run_datasets = scenario_datasets.get(0).unwrap().by_run();
-        let run_dataset = run_datasets.get(0).unwrap();
+        let run_datasets = scenario_datasets.first().unwrap().by_run();
+        let run_dataset = run_datasets.first().unwrap();
 
         // there should be three runs for scenario 3 returned in reverse chronological order
         // ie. [3]

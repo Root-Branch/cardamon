@@ -95,7 +95,7 @@ impl Config {
     pub fn find_scenarios(&self, scenario_names: &[&String]) -> anyhow::Result<Vec<&Scenario>> {
         let mut scenarios = vec![];
         for scenario_name in scenario_names {
-            let scenario = self.find_scenario(&scenario_name)?;
+            let scenario = self.find_scenario(scenario_name)?;
             scenarios.push(scenario);
         }
         Ok(scenarios)
@@ -118,7 +118,7 @@ impl Config {
     fn find_processes(&self, proc_names: &[&String]) -> anyhow::Result<Vec<&Process>> {
         let mut processes = vec![];
         for proc_name in proc_names {
-            let proc = self.find_process(&proc_name)?;
+            let proc = self.find_process(proc_name)?;
             processes.push(proc);
         }
         Ok(processes)
@@ -146,7 +146,7 @@ impl Config {
                 if !external_only {
                     let mut proc_set: HashSet<String> = HashSet::new();
                     for scenario_name in scenario_names {
-                        let scenario = self.find_scenario(&scenario_name).context(format!(
+                        let scenario = self.find_scenario(scenario_name).context(format!(
                             "Unable to find scenario with name {}",
                             scenario_name
                         ))?;
@@ -273,6 +273,7 @@ pub enum ProcessToObserve {
 pub enum ExecutionMode<'a> {
     Live,
     Observation(Vec<&'a Scenario>),
+    Trigger,
 }
 
 #[derive(Debug)]
@@ -303,10 +304,7 @@ impl<'a> ExecutionPlan<'a> {
     pub fn observe_external_process(&mut self, process_to_observe: ProcessToObserve) {
         match &mut self.external_processes_to_observe {
             None => self.external_processes_to_observe = Some(vec![process_to_observe]),
-            Some(vec) => {
-                vec.push(process_to_observe);
-                Some(vec);
-            }
+            Some(vec) => vec.push(process_to_observe),
         };
     }
 }

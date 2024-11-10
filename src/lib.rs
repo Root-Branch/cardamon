@@ -1,3 +1,4 @@
+pub mod carbon_intensity;
 pub mod config;
 pub mod dao;
 pub mod data;
@@ -560,6 +561,8 @@ pub async fn run_live<'a>(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
+    region: Option<String>,
+    ci: f64,
     db: &DatabaseConnection,
 ) -> anyhow::Result<DatasetRows> {
     let mut processes_to_observe = exec_plan.external_processes_to_observe.unwrap_or(vec![]); // external procs to observe are cloned here.
@@ -605,7 +608,7 @@ pub async fn run<'a>(
                     cpu::ActiveModel {
                         id: ActiveValue::NotSet,
                         name: ActiveValue::Set(exec_plan.cpu.name),
-                        tdp: ActiveValue::Set(Some(tdp as f32)),
+                        tdp: ActiveValue::Set(Some(tdp)),
                         power_curve_id: ActiveValue::NotSet,
                     }
                     .save(db)
@@ -615,10 +618,10 @@ pub async fn run<'a>(
                 Power::Curve(a, b, c, d) => {
                     let power_curve = entities::power_curve::ActiveModel {
                         id: ActiveValue::NotSet,
-                        a: ActiveValue::Set(a as f32),
-                        b: ActiveValue::Set(b as f32),
-                        c: ActiveValue::Set(c as f32),
-                        d: ActiveValue::Set(d as f32),
+                        a: ActiveValue::Set(a),
+                        b: ActiveValue::Set(b),
+                        c: ActiveValue::Set(c),
+                        d: ActiveValue::Set(d),
                     }
                     .save(db)
                     .await?
@@ -644,6 +647,8 @@ pub async fn run<'a>(
         id: ActiveValue::NotSet,
         is_live: ActiveValue::Set(is_live),
         cpu_id: ActiveValue::Set(cpu_id),
+        region: ActiveValue::Set(region),
+        carbon_intensity: ActiveValue::Set(ci),
         start_time: ActiveValue::Set(start_time),
         stop_time: ActiveValue::set(start_time), // set to start time for now we'll update it later
     }
@@ -669,6 +674,10 @@ pub async fn run<'a>(
 
         config::ExecutionMode::Live => {
             run_live(run_id, processes_to_observe.clone(), db).await?;
+        }
+
+        config::ExecutionMode::Trigger => {
+            todo!()
         }
     };
 
