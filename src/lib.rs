@@ -561,7 +561,7 @@ pub async fn run_live<'a>(
 
 pub async fn run<'a>(
     exec_plan: ExecutionPlan<'a>,
-    region: Option<String>,
+    region: &Option<String>,
     ci: f64,
     db: &DatabaseConnection,
 ) -> anyhow::Result<DatasetRows> {
@@ -647,7 +647,7 @@ pub async fn run<'a>(
         id: ActiveValue::NotSet,
         is_live: ActiveValue::Set(is_live),
         cpu_id: ActiveValue::Set(cpu_id),
-        region: ActiveValue::Set(region),
+        region: ActiveValue::Set(region.clone()),
         carbon_intensity: ActiveValue::Set(ci),
         start_time: ActiveValue::Set(start_time),
         stop_time: ActiveValue::set(start_time), // set to start time for now we'll update it later

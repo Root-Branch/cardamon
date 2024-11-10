@@ -362,6 +362,8 @@ impl<'a> ScenarioRunDataset<'a> {
 
         Ok(RunData {
             run_id: self.run_id,
+            region: run.region,
+            ci: run.carbon_intensity,
             start_time,
             stop_time,
             data: total_run_data,

@@ -74,10 +74,12 @@ pub struct ProcessResponse {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunResponse {
+    pub region: Option<String>,
     pub start_time: i64,
     pub duration: f64,
     pub pow: f64,
     pub co2: f64,
+    pub ci: f64,
     pub processes: Vec<ProcessResponse>,
 }
 
@@ -232,10 +234,12 @@ pub async fn get_runs(
             // println!("processes json\n{:?}", json_str);
 
             runs.push(RunResponse {
+                region: model_data.region.clone(),
                 start_time: model_data.start_time,
                 duration: model_data.duration(),
                 pow: model_data.data.pow,
                 co2: model_data.data.co2,
+                ci: model_data.ci,
                 processes,
             });
         }

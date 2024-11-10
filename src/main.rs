@@ -105,6 +105,74 @@ fn add_external_processes(
     Ok(())
 }
 
+async fn get_or_validate_region_code(region_code: Option<String>) -> Option<String> {
+    match region_code {
+        None => {
+            print!("> fetching region from IP address");
+            match fetch_region_code().await {
+                Err(err) => {
+                    println!("\t{}", "✗".red());
+                    println!("\t{}", format!("- {}", err).bright_black());
+                    None
+                }
+
+                Ok(code) => {
+                    println!("\t{}", "✓".green());
+                    println!(
+                        "\t{}",
+                        format!("- using region code {}", code).bright_black()
+                    );
+                    Some(code)
+                }
+            }
+        }
+
+        Some(code) => {
+            print!("> validating region code");
+            if valid_region_code(&code) {
+                println!("\t{}", "✓".green());
+                Some(code)
+            } else {
+                println!("\t{}", "✗".red());
+                None
+            }
+        }
+    }
+}
+
+async fn get_carbon_intensity(region_code: &Option<String>) -> f64 {
+    let now = Utc::now();
+    match region_code {
+        Some(code) => {
+            print!("> fetching carbon intensity for {}", code);
+            match fetch_ci(&code, &now).await {
+                Ok(ci) => {
+                    println!("\t{}", "✓".green());
+                    println!(
+                        "\t{}",
+                        format!("- using {:.3} gWh CO2eq", ci).bright_black()
+                    );
+                    ci
+                }
+
+                Err(_) => {
+                    println!("\t{}", "✗".red());
+                    println!("\t{}", "- using global avg 0.494 gWh CO2eq".bright_black());
+                    GLOBAL_CI
+                }
+            }
+        }
+
+        None => {
+            print!(
+                "> using global avg carbon intensity {} gWh CO2eq",
+                "0.494".green()
+            );
+            GLOBAL_CI
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // read .env file if it exists
@@ -146,70 +214,9 @@ async fn main() -> anyhow::Result<()> {
             let config = load_config(&args.file)
                 .context("Error loading configuration, please run `cardamon init`")?;
 
-            let now = Utc::now();
-
-            let region_code = match region {
-                None => {
-                    print!("> fetching region from IP address");
-                    match fetch_region_code().await {
-                        Err(err) => {
-                            println!("\t{}", "✗".red());
-                            println!("\t{}", format!("- {}", err).bright_black());
-                            None
-                        }
-
-                        Ok(code) => {
-                            println!("\t{}", "✓".green());
-                            println!(
-                                "\t{}",
-                                format!("- using region code {}", code).bright_black()
-                            );
-                            Some(code)
-                        }
-                    }
-                }
-
-                Some(code) => {
-                    print!("> validating region code");
-                    if valid_region_code(&code) {
-                        println!("\t{}", "✓".green());
-                        Some(code)
-                    } else {
-                        println!("\t{}", "✗".red());
-                        None
-                    }
-                }
-            };
-
-            let ci = match &region_code {
-                Some(code) => {
-                    print!("> fetching carbon intensity for {}", code);
-                    match fetch_ci(&code, &now).await {
-                        Ok(ci) => {
-                            println!("\t{}", "✓".green());
-                            println!(
-                                "\t{}",
-                                format!("- using {:.3} gWh CO2eq", ci).bright_black()
-                            );
-                            ci
-                        }
-
-                        Err(_) => {
-                            println!("\t{}", "✗".red());
-                            println!("\t{}", "- using global avg 0.494 gWh CO2eq".bright_black());
-                            GLOBAL_CI
-                        }
-                    }
-                }
-
-                None => {
-                    print!(
-                        "> using global avg carbon intensity {} gWh CO2eq",
-                        "0.494".green()
-                    );
-                    GLOBAL_CI
-                }
-            };
+            // get the carbon intensity
+            let region_code = get_or_validate_region_code(region).await;
+            let ci = get_carbon_intensity(&region_code).await;
 
             // create an execution plan
             let cpu = config.cpu.clone();
@@ -222,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
             cleanup_stdout_stderr()?;
 
             // run it!
-            let observation_dataset_rows = run(execution_plan, region_code, ci, &db_conn).await?;
+            let observation_dataset_rows = run(execution_plan, &region_code, ci, &db_conn).await?;
             let observation_dataset = observation_dataset_rows
                 .last_n_runs(5)
                 .all()
@@ -266,15 +273,22 @@ async fn main() -> anyhow::Result<()> {
                 let table = Table::builder()
                     .rows(rows![
                         row![
+                            TableCell::builder("Region").build(),
                             TableCell::builder("Duration (s)".bold()).build(),
                             TableCell::builder("Power (Wh)".bold()).build(),
+                            TableCell::builder("CI (gWh)".bold()).build(),
                             TableCell::builder("CO2 (g)".bold()).build(),
                             TableCell::builder(format!("Trend (over {} runs)", tail.len()).bold())
                                 .build()
                         ],
                         row![
+                            TableCell::new(format!(
+                                "{}",
+                                run_data.region.clone().unwrap_or_default()
+                            )),
                             TableCell::new(format!("{:.3}s", run_data.duration())),
                             TableCell::new(format!("{:.3}Wh", run_data.data.pow)),
+                            TableCell::new(format!("{:.3}gWh", run_data.ci)),
                             TableCell::new(format!("{:.3}g", run_data.data.co2)),
                             TableCell::new(trend_str)
                         ]
@@ -316,8 +330,10 @@ async fn main() -> anyhow::Result<()> {
                 let mut table = Table::builder()
                     .rows(rows![row![
                         TableCell::builder("Datetime (Utc)".bold()).build(),
+                        TableCell::builder("Region".bold()).build(),
                         TableCell::builder("Duration (s)".bold()).build(),
                         TableCell::builder("Power (Wh)".bold()).build(),
+                        TableCell::builder("CI (gWh)".bold()).build(),
                         TableCell::builder("CO2 (g)".bold()).build()
                     ]])
                     .style(TableStyle::rounded())
@@ -327,14 +343,18 @@ async fn main() -> anyhow::Result<()> {
                 // let mut run = 0.0;
                 for run_dataset in scenario_dataset.by_run() {
                     let run_data = run_dataset.apply_model(&db_conn, &rab_model).await?;
+                    let run_region = run_data.region;
+                    let run_ci = run_data.ci;
                     let run_start_time = Utc.timestamp_opt(run_data.start_time / 1000, 0).unwrap();
                     let run_duration = (run_data.stop_time - run_data.start_time) as f64 / 1000.0;
                     let _per_min_factor = 60.0 / run_duration;
 
                     table.add_row(row![
                         TableCell::new(run_start_time.format("%d/%m/%y %H:%M")),
+                        TableCell::new(run_region.unwrap_or_default()),
                         TableCell::new(format!("{:.3}s", run_duration)),
                         TableCell::new(format!("{:.4}Wh", run_data.data.pow)),
+                        TableCell::new(format!("{:.4}gWh", run_ci)),
                         TableCell::new(format!("{:.4}g", run_data.data.co2)),
                     ]);
                     // points.push((run, run_data.data.pow as f32));
