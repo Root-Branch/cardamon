@@ -1,5 +1,5 @@
 use crate::{
-    execution_modes::execution_plan::ProcessToObserve,
+    execution_plan::ProcessToObserve,
     metrics::{CpuMetrics, MetricsLog},
 };
 use chrono::Utc;

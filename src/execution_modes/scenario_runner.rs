@@ -2,9 +2,10 @@ use crate::{
     config::Scenario,
     data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder, Data},
     entities::{iteration, run},
-    execution_modes::execution_plan::ProcessToObserve,
+    execution_plan::ProcessToObserve,
     metrics_logger,
     models::rab_model,
+    process_control::shutdown_processes,
 };
 use anyhow::{anyhow, Context};
 use chrono::Utc;
@@ -13,8 +14,6 @@ use itertools::*;
 use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, TryIntoModel};
 use term_table::{row, row::Row, rows, table_cell::*, Table, TableStyle};
 use tracing::info;
-
-use super::process_control::shutdown_processes;
 
 pub async fn run_scenario<'a>(
     run_id: i32,

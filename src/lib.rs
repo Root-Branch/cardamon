@@ -4,25 +4,24 @@ pub mod dao;
 pub mod data;
 pub mod entities;
 pub mod execution_modes;
+pub mod execution_plan;
 pub mod metrics;
 pub mod metrics_logger;
 pub mod migrations;
 pub mod models;
+pub mod process_control;
 pub mod server;
 
 use crate::{
-    execution_modes::{execution_plan::ExecutionPlan, ExecutionMode},
+    execution_modes::{live_monitor::run_live, scenario_runner::run_scenarios, ExecutionMode},
+    execution_plan::ExecutionPlan,
     migrations::{Migrator, MigratorTrait},
+    process_control::{run_process, shutdown_processes},
 };
 use anyhow::Context;
 use colored::Colorize;
 use config::Power;
 use entities::cpu;
-use execution_modes::{
-    live_monitor::run_live,
-    process_control::{run_process, shutdown_processes},
-    scenario_runner::run_scenarios,
-};
 use sea_orm::*;
 use std::{
     fs::{self},

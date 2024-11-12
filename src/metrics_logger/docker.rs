@@ -1,4 +1,4 @@
-use crate::execution_modes::execution_plan::ProcessToObserve;
+use crate::execution_plan::ProcessToObserve;
 use crate::metrics::{CpuMetrics, MetricsLog};
 use bollard::container::{ListContainersOptions, Stats, StatsOptions};
 use bollard::Docker;

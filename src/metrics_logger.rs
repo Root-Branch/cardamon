@@ -1,7 +1,7 @@
 pub mod bare_metal;
 pub mod docker;
 
-use crate::{execution_modes::execution_plan::ProcessToObserve, metrics::MetricsLog};
+use crate::{execution_plan::ProcessToObserve, metrics::MetricsLog};
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;

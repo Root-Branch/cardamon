@@ -1,13 +1,12 @@
-use std::time::Duration;
-
 use crate::{
     dao,
     entities::{iteration, run},
-    execution_modes::execution_plan::ProcessToObserve,
+    execution_plan::ProcessToObserve,
     metrics_logger,
 };
 use chrono::Utc;
 use sea_orm::*;
+use std::time::Duration;
 
 pub async fn run_live<'a>(
     cpu_id: i32,

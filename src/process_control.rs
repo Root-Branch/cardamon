@@ -1,6 +1,6 @@
 use crate::{
     config::{Process, ProcessType, Redirect},
-    execution_modes::execution_plan::ProcessToObserve,
+    execution_plan::ProcessToObserve,
 };
 use anyhow::{anyhow, Context};
 use colored::*;

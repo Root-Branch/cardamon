@@ -5,7 +5,7 @@ use cardamon::{
     config::{self, init_config, Config},
     data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder},
     db_connect, db_migrate,
-    execution_modes::execution_plan::{create_execution_plan, ExecutionPlan, ProcessToObserve},
+    execution_plan::{create_execution_plan, ExecutionPlan, ProcessToObserve},
     models::rab_model,
     run, server,
 };
