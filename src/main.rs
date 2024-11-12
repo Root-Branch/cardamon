@@ -2,9 +2,10 @@ use anyhow::Context;
 use cardamon::{
     carbon_intensity::{fetch_ci, fetch_region_code, valid_region_code, GLOBAL_CI},
     cleanup_stdout_stderr,
-    config::{self, Config, ExecutionPlan, ProcessToObserve},
-    data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder, Data},
-    db_connect, db_migrate, init_config,
+    config::{self, init_config, Config},
+    data::{dataset::LiveDataFilter, dataset_builder::DatasetBuilder},
+    db_connect, db_migrate,
+    execution_modes::execution_plan::{create_execution_plan, ExecutionPlan, ProcessToObserve},
     models::rab_model,
     run, server,
 };
@@ -12,7 +13,6 @@ use chrono::{TimeZone, Utc};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use dotenvy::dotenv;
-use itertools::Itertools;
 use std::{env, path::Path};
 use term_table::{row, row::Row, rows, table_cell::*, Table, TableStyle};
 use tracing_subscriber::EnvFilter;
@@ -51,6 +51,9 @@ pub enum Commands {
 
         #[arg(long)]
         external_only: bool,
+
+        #[arg(short, long)]
+        daemon: bool,
     },
 
     Stats {
@@ -210,6 +213,7 @@ async fn main() -> anyhow::Result<()> {
             pids,
             containers,
             external_only,
+            daemon,
         } => {
             let config = load_config(&args.file)
                 .context("Error loading configuration, please run `cardamon init`")?;
@@ -220,7 +224,7 @@ async fn main() -> anyhow::Result<()> {
 
             // create an execution plan
             let cpu = config.cpu.clone();
-            let mut execution_plan = config.create_execution_plan(cpu, &name, external_only)?;
+            let mut execution_plan = create_execution_plan(&config, cpu, &name, external_only)?;
 
             // add external processes to observe.
             add_external_processes(pids, containers, &mut execution_plan)?;
@@ -229,75 +233,7 @@ async fn main() -> anyhow::Result<()> {
             cleanup_stdout_stderr()?;
 
             // run it!
-            let observation_dataset_rows = run(execution_plan, &region_code, ci, &db_conn).await?;
-            let observation_dataset = observation_dataset_rows
-                .last_n_runs(5)
-                .all()
-                .build(&db_conn)
-                .await?;
-
-            println!("\n{}", " Summary ".reversed().green());
-            for scenario_dataset in observation_dataset
-                .by_scenario(LiveDataFilter::ExcludeLive)
-                .iter()
-            {
-                let run_datasets = scenario_dataset.by_run();
-
-                // execute model for current run
-                let (head, tail) = run_datasets
-                    .split_first()
-                    .expect("Dataset does not include recent run.");
-                let run_data = head.apply_model(&db_conn, &rab_model).await?;
-
-                // execute model for previous runs and calculate trend
-                let mut tail_data = vec![];
-                for run_dataset in tail {
-                    let run_data = run_dataset.apply_model(&db_conn, &rab_model).await?;
-                    tail_data.push(run_data.data);
-                }
-                let tail_data = Data::mean(&tail_data.iter().collect_vec());
-                let trend = run_data.data.pow - tail_data.pow;
-                let trend_str = match trend.is_nan() {
-                    true => "--".bright_black(),
-                    false => {
-                        if trend > 0.0 {
-                            format!("↑ {:.3}Wh", trend.abs()).red()
-                        } else {
-                            format!("↓ {:.3}Wh", trend).green()
-                        }
-                    }
-                };
-
-                println!("{}:", scenario_dataset.scenario_name().to_string().green());
-
-                let table = Table::builder()
-                    .rows(rows![
-                        row![
-                            TableCell::builder("Region").build(),
-                            TableCell::builder("Duration (s)".bold()).build(),
-                            TableCell::builder("Power (Wh)".bold()).build(),
-                            TableCell::builder("CI (gWh)".bold()).build(),
-                            TableCell::builder("CO2 (g)".bold()).build(),
-                            TableCell::builder(format!("Trend (over {} runs)", tail.len()).bold())
-                                .build()
-                        ],
-                        row![
-                            TableCell::new(format!(
-                                "{}",
-                                run_data.region.clone().unwrap_or_default()
-                            )),
-                            TableCell::new(format!("{:.3}s", run_data.duration())),
-                            TableCell::new(format!("{:.3}Wh", run_data.data.pow)),
-                            TableCell::new(format!("{:.3}gWh", run_data.ci)),
-                            TableCell::new(format!("{:.3}g", run_data.data.co2)),
-                            TableCell::new(trend_str)
-                        ]
-                    ])
-                    .style(TableStyle::rounded())
-                    .build();
-
-                println!("{}", table.render())
-            }
+            run(execution_plan, &region_code, ci, &db_conn).await?;
         }
 
         Commands::Stats {

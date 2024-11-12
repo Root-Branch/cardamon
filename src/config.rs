@@ -1,11 +1,15 @@
 use anyhow::Context;
+use colored::Colorize;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     fs::{self, File},
     io::{Read, Write},
+    path::Path,
 };
+use sysinfo::{CpuRefreshKind, RefreshKind, System};
 
 #[cfg(not(windows))]
 static EXAMPLE_CONFIG: &str = include_str!("templates/cardamon.unix.toml");
@@ -75,7 +79,7 @@ impl Config {
         toml::from_str::<Config>(conf_str).map_err(|e| anyhow::anyhow!("TOML parsing error: {}", e))
     }
 
-    fn find_observation(&self, obs_name: &str) -> Option<&Observation> {
+    pub fn find_observation(&self, obs_name: &str) -> Option<&Observation> {
         self.observations.iter().find(|obs| match obs {
             Observation::LiveMonitor { name, processes: _ } => name == obs_name,
             Observation::ScenarioRunner { name, scenarios: _ } => name == obs_name,
@@ -115,66 +119,13 @@ impl Config {
             .context(format!("Unable to find process with name {}", proc_name))
     }
 
-    fn find_processes(&self, proc_names: &[&String]) -> anyhow::Result<Vec<&Process>> {
+    pub fn find_processes(&self, proc_names: &[&String]) -> anyhow::Result<Vec<&Process>> {
         let mut processes = vec![];
         for proc_name in proc_names {
             let proc = self.find_process(proc_name)?;
             processes.push(proc);
         }
         Ok(processes)
-    }
-
-    pub fn create_execution_plan(
-        &self,
-        cpu: Cpu,
-        obs_name: &str,
-        external_only: bool,
-    ) -> anyhow::Result<ExecutionPlan> {
-        let obs = self.find_observation(obs_name).context(format!(
-            "Couldn't find an observation with name {}",
-            obs_name
-        ))?;
-
-        let mut processes_to_execute = vec![];
-
-        let exec_plan = match &obs {
-            Observation::ScenarioRunner { name: _, scenarios } => {
-                let scenario_names = scenarios.iter().collect_vec();
-                let scenarios = self.find_scenarios(&scenario_names)?;
-
-                // find the intersection of processes between all the scenarios
-                if !external_only {
-                    let mut proc_set: HashSet<String> = HashSet::new();
-                    for scenario_name in scenario_names {
-                        let scenario = self.find_scenario(scenario_name).context(format!(
-                            "Unable to find scenario with name {}",
-                            scenario_name
-                        ))?;
-                        for proc_name in &scenario.processes {
-                            proc_set.insert(proc_name.clone());
-                        }
-                    }
-
-                    let proc_names = proc_set.iter().collect_vec();
-                    processes_to_execute = self.find_processes(&proc_names)?;
-                }
-                ExecutionPlan::new(
-                    cpu,
-                    processes_to_execute,
-                    ExecutionMode::Observation(scenarios),
-                )
-            }
-
-            Observation::LiveMonitor { name: _, processes } => {
-                if !external_only {
-                    let proc_names = processes.iter().collect_vec();
-                    processes_to_execute = self.find_processes(&proc_names)?;
-                }
-                ExecutionPlan::new(cpu, processes_to_execute, ExecutionMode::Live)
-            }
-        };
-
-        Ok(exec_plan)
     }
 }
 
@@ -239,82 +190,194 @@ pub enum Observation {
     },
 }
 
-// #[derive(Debug, Deserialize, Serialize)]
-// pub struct Observation {
-//     pub name: String,
-//     #[serde(rename = "observe")]
-//     pub observation_mode: ObservationMode,
-// }
+fn ask_for_tdp() -> Power {
+    loop {
+        print!("Please enter the TDP of your CPU in watts: ");
+        let _ = std::io::stdout().flush();
 
-// ******** ******** ********
-// **    EXECUTION PLAN    **
-// ******** ******** ********
-#[derive(Debug, Clone)]
-pub enum ProcessToObserve {
-    ExternalPid(u32),
-    ExternalContainers(Vec<String>),
-
-    /// ManagedPid represents a baremetal processes started by Cardamon
-    ManagedPid {
-        process_name: String,
-        pid: u32,
-        down: Option<String>,
-    },
-
-    /// ManagedContainers represents a docker processes started by Cardamon
-    ManagedContainers {
-        process_name: String,
-        container_names: Vec<String>,
-        down: Option<String>,
-    },
+        let mut input = String::new();
+        let res = std::io::stdin().read_line(&mut input);
+        match res {
+            Ok(_) => match input.trim().parse::<f64>() {
+                Ok(parsed_input) => {
+                    return Power::Tdp(parsed_input);
+                }
+                Err(_) => {
+                    println!("{}", "Please enter a valid number.".yellow());
+                    continue;
+                }
+            },
+            Err(_) => continue,
+        }
+    }
 }
 
-#[derive(Debug)]
-pub enum ExecutionMode<'a> {
-    Live,
-    Observation(Vec<&'a Scenario>),
-    Trigger,
+fn ask_for_cpu() -> String {
+    loop {
+        print!("Please enter a CPU name: ");
+        let _ = std::io::stdout().flush();
+
+        let mut input = String::new();
+        let res = std::io::stdin().read_line(&mut input);
+        match res {
+            Ok(_) => return input,
+            Err(_) => continue,
+        }
+    }
 }
 
-#[derive(Debug)]
-pub struct ExecutionPlan<'a> {
-    pub cpu: Cpu,
-    pub external_processes_to_observe: Option<Vec<ProcessToObserve>>,
-    pub processes_to_execute: Vec<&'a Process>,
-    pub execution_mode: ExecutionMode<'a>,
+fn find_cpu() -> Option<String> {
+    let sys = System::new_with_specifics(RefreshKind::new().with_cpu(CpuRefreshKind::everything()));
+    sys.cpus().first().map(|cpu| cpu.brand().to_string())
 }
-impl<'a> ExecutionPlan<'a> {
-    pub fn new(
-        cpu: Cpu,
-        processes_to_execute: Vec<&'a Process>,
-        execution_mode: ExecutionMode<'a>,
-    ) -> Self {
-        ExecutionPlan {
-            cpu,
-            external_processes_to_observe: None,
-            processes_to_execute,
-            execution_mode,
+
+fn try_power_curve(json_obj: &Value) -> Option<Power> {
+    let params_obj = json_obj.get("verbose")?.get("params")?.get("value")?;
+
+    let a = params_obj.get("a")?.as_f64()?;
+    let b = params_obj.get("b")?.as_f64()?;
+    let c = params_obj.get("c")?.as_f64()?;
+    let d = params_obj.get("d")?.as_f64()?;
+
+    Some(Power::Curve(a, b, c, d))
+}
+
+fn try_tdp(json_obj: &Value) -> Option<Power> {
+    let tdp = json_obj
+        .get("verbose")?
+        .get("tdp")?
+        .get("value")?
+        .as_f64()?;
+
+    Some(Power::Tdp(tdp))
+}
+
+async fn fetch_power(cpu_name: &str) -> anyhow::Result<Power> {
+    let client = reqwest::Client::new();
+    let mut json = HashMap::new();
+    json.insert("name", cpu_name);
+
+    let resp = client
+        .post("https://api.boavizta.org/v1/component/cpu")
+        .header("Content-Type", "application/json")
+        .json(&json)
+        .send()
+        .await?;
+
+    let json_obj = resp.json().await?;
+
+    try_power_curve(&json_obj)
+        .or(try_tdp(&json_obj))
+        .context("Error fetching power from Boavizta!")
+}
+
+/// Attempts to find the users CPU automatically and asks the user to enter it manually if that
+/// fails.
+pub async fn init_config() {
+    let cpu_name: String;
+
+    println!("\n{}", " Setting up Cardamon ".reversed().green());
+    loop {
+        print!("Would you like to create a config for this computer [1] or another computer [2]? ");
+        let _ = std::io::stdout().flush();
+
+        let mut ans = String::new();
+        let res = std::io::stdin().read_line(&mut ans);
+        match res {
+            Ok(_) => {
+                let opt = ans.trim().parse::<u32>();
+                match opt {
+                    Ok(1) => {
+                        cpu_name = match find_cpu() {
+                            Some(name) => {
+                                println!("{} {}", "It looks like you have a".yellow(), name);
+                                name
+                            }
+                            None => {
+                                println!("{}", "Unable to find CPU!".red());
+                                ask_for_cpu()
+                            }
+                        };
+                        break;
+                    }
+                    Ok(2) => {
+                        cpu_name = ask_for_cpu();
+                        break;
+                    }
+                    _ => {
+                        println!("{}", "Please enter 1 or 2.\n".yellow());
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {
+                println!("{}", "Please enter 1 or 2.\n".yellow());
+                continue;
+            }
         }
     }
 
-    /// Adds a process that has not been started by Cardamon to this execution plan for observation.
-    ///
-    /// # Arguments
-    /// * process_to_observe - A process which has been started externally to Cardamon.
-    pub fn observe_external_process(&mut self, process_to_observe: ProcessToObserve) {
-        match &mut self.external_processes_to_observe {
-            None => self.external_processes_to_observe = Some(vec![process_to_observe]),
-            Some(vec) => vec.push(process_to_observe),
-        };
+    let power = match fetch_power(&cpu_name).await {
+        Ok(pow @ Power::Curve(a, b, c, d)) => {
+            let peak_pow = a * (b * (100.0 + c)).ln() + d;
+            println!(
+                "{} {}",
+                "Boavista reports a peak power of".yellow(),
+                peak_pow
+            );
+            pow
+        }
+
+        Ok(pow @ Power::Tdp(tdp)) => {
+            println!("{} {}", "Boavizta reports a tdp of".yellow(), tdp);
+            pow
+        }
+
+        Err(_) => {
+            println!("{}", "Cannot get power from Boavizta for your CPU!".red());
+            ask_for_tdp()
+        }
+    };
+
+    match Config::write_example_to_file(&cpu_name, power, Path::new("./cardamon.toml")) {
+        Ok(_) => {
+            println!("{}", "cardamon.toml created!".green());
+            println!("\n🤩\n");
+        }
+
+        Err(err) => {
+            println!("{}\n{}", "Error creating config.".red(), err);
+            println!("\n😭\n");
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
-
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn should_find_cpu() {
+        let cpu_name = find_cpu();
+        assert!(cpu_name.is_some())
+    }
+
+    #[tokio::test]
+    async fn fetch_tdp_should_work() -> anyhow::Result<()> {
+        let cpu_name = find_cpu();
+
+        if let Some(cpu_name) = cpu_name {
+            let power = fetch_power(&cpu_name).await?;
+            match power {
+                Power::Curve(_, _, _, _) => assert!(true),
+                Power::Tdp(tdp) => assert!(tdp > 0.0),
+            }
+            return Ok(());
+        }
+
+        panic!()
+    }
 
     #[test]
     fn can_load_config_file() -> anyhow::Result<()> {
@@ -355,104 +418,6 @@ mod tests {
         let process = cfg.find_process("nope");
         assert!(process.is_err());
 
-        Ok(())
-    }
-
-    // #[test]
-    // fn collecting_processes_works() -> anyhow::Result<()> {
-    //     let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
-    //
-    //     let obs_name = "test_app";
-    //     let obs = cfg.find_observation(obs_name).context("")?;
-    //
-    //     let process_names = cfg
-    //         .collect_processes(obs.)?
-    //         .into_iter()
-    //         .map(|proc_to_exec| match proc_to_exec.process.process_type {
-    //             ProcessType::BareMetal => proc_to_exec.process.name.as_str(),
-    //             ProcessType::Docker { containers: _ } => proc_to_exec.process.name.as_str(),
-    //         })
-    //         .sorted()
-    //         .collect::<Vec<_>>();
-    //
-    //     assert_eq!(process_names, ["db", "mailgun", "server"]);
-    //
-    //     Ok(())
-    // }
-
-    // #[test]
-    // fn multiple_iterations_should_create_more_scenarios_to_execute() -> anyhow::Result<()> {
-    //     let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_iterations.toml"))?;
-    //     let scenario = cfg
-    //         .find_scenario("basket_10")
-    //         .expect("scenario 'basket_10' should exist!");
-    //     let scenarios_to_execute = vec![ScenarioToExecute::new(scenario)];
-    //     assert_eq!(scenarios_to_execute.len(), 2);
-    //     Ok(())
-    // }
-
-    #[test]
-    fn can_create_exec_plan_for_observation() -> anyhow::Result<()> {
-        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
-
-        let cpu = Cpu {
-            name: "AMD Ryzen 7 6850U".to_string(),
-            power: Power::Tdp(11.2),
-        };
-
-        let exec_plan = cfg.create_execution_plan(cpu, "checkout", false)?;
-        match exec_plan.execution_mode {
-            ExecutionMode::Observation(scenarios) => {
-                let scenario_names = scenarios
-                    .iter()
-                    .map(|s| s.name.as_str())
-                    .sorted()
-                    .collect_vec();
-
-                let process_names: Vec<&str> = exec_plan
-                    .processes_to_execute
-                    .into_iter()
-                    .map(|proc| match proc.process_type {
-                        ProcessType::Docker { containers: _ } => proc.name.as_str(),
-                        ProcessType::BareMetal => proc.name.as_str(),
-                    })
-                    .sorted()
-                    .collect();
-
-                assert_eq!(scenario_names, ["basket_10", "user_signup"]);
-                assert_eq!(process_names, ["db", "mailgun", "server"]);
-            }
-
-            _ => panic!("oops! was expecting a ObservationMode::Scenarios"),
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn can_create_exec_plan_for_monitor() -> anyhow::Result<()> {
-        let cfg = Config::try_from_path(Path::new("./fixtures/cardamon.multiple_scenarios.toml"))?;
-
-        let cpu = Cpu {
-            name: "AMD Ryzen 7 6850U".to_string(),
-            power: Power::Tdp(11.2),
-        };
-
-        let exec_plan = cfg.create_execution_plan(cpu, "live_monitor", false)?;
-        match exec_plan.execution_mode {
-            ExecutionMode::Live => {
-                let process_names: Vec<&str> = exec_plan
-                    .processes_to_execute
-                    .into_iter()
-                    .map(|proc| proc.name.as_str())
-                    .sorted()
-                    .collect();
-
-                assert_eq!(process_names, ["db", "mailgun", "server"]);
-            }
-
-            _ => panic!("oops! was expecting a ObservationMode::Monitor"),
-        }
         Ok(())
     }
 }

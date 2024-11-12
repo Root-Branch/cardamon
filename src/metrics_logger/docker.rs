@@ -1,4 +1,4 @@
-use crate::config::ProcessToObserve;
+use crate::execution_modes::execution_plan::ProcessToObserve;
 use crate::metrics::{CpuMetrics, MetricsLog};
 use bollard::container::{ListContainersOptions, Stats, StatsOptions};
 use bollard::Docker;
@@ -214,30 +214,21 @@ pub async fn get_container_status(container_name: &str) -> anyhow::Result<String
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        config::ProcessToObserve,
-        metrics::{CpuMetrics, MetricsLog},
-        metrics_logger::{
-            docker::{get_container_status, keep_logging},
-            StopHandle,
-        },
-    };
+    use crate::metrics_logger::StopHandle;
+
+    use super::*;
     use bollard::{
         container::{Config, CreateContainerOptions, RemoveContainerOptions},
         image::{BuildImageOptions, RemoveImageOptions},
-        Docker,
     };
     use bytes::Bytes;
-    use chrono::Utc;
-    use core::time;
-    use futures_util::StreamExt;
     use nanoid::nanoid;
-    use std::{
-        io::Cursor,
-        sync::{Arc, Mutex},
-    };
+    use std::io::Cursor;
     use tar::{Builder, Header};
-    use tokio::{task::JoinSet, time::sleep};
+    use tokio::{
+        task::JoinSet,
+        time::{self, sleep},
+    };
     use tokio_util::sync::CancellationToken;
 
     async fn create_and_start_container(docker: &Docker) -> (String, String, String) {
