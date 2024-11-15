@@ -1,4 +1,4 @@
-mod errors;
+pub mod errors;
 mod routes;
 
 use anyhow::Context;

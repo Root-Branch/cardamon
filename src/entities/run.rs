@@ -5,12 +5,12 @@ use sea_orm::entity::prelude::*;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "run")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i32,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: String,
     pub is_live: bool,
     pub cpu_id: i32,
     pub start_time: i64,
-    pub stop_time: i64,
+    pub stop_time: Option<i64>,
     pub region: Option<String>,
     #[sea_orm(column_type = "Double")]
     pub carbon_intensity: f64,

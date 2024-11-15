@@ -22,6 +22,7 @@ use anyhow::Context;
 use colored::Colorize;
 use config::Power;
 use entities::cpu;
+use execution_modes::daemon::run_daemon;
 use sea_orm::*;
 use std::{
     fs::{self},
@@ -197,7 +198,7 @@ pub async fn run(
         }
 
         ExecutionMode::Daemon => {
-            todo!()
+            run_daemon(cpu_id, region, ci, processes_to_observe.clone(), db).await?;
         }
     };
 

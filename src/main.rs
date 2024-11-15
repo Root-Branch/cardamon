@@ -224,7 +224,8 @@ async fn main() -> anyhow::Result<()> {
 
             // create an execution plan
             let cpu = config.cpu.clone();
-            let mut execution_plan = create_execution_plan(&config, cpu, &name, external_only)?;
+            let mut execution_plan =
+                create_execution_plan(&config, cpu, &name, external_only, daemon)?;
 
             // add external processes to observe.
             add_external_processes(pids, containers, &mut execution_plan)?;
@@ -282,13 +283,18 @@ async fn main() -> anyhow::Result<()> {
                     let run_region = run_data.region;
                     let run_ci = run_data.ci;
                     let run_start_time = Utc.timestamp_opt(run_data.start_time / 1000, 0).unwrap();
-                    let run_duration = (run_data.stop_time - run_data.start_time) as f64 / 1000.0;
-                    let _per_min_factor = 60.0 / run_duration;
+                    let run_duration = run_data
+                        .stop_time
+                        .map(|stop_time| (stop_time - run_data.start_time) as f64 / 1000.0);
 
                     table.add_row(row![
                         TableCell::new(run_start_time.format("%d/%m/%y %H:%M")),
                         TableCell::new(run_region.unwrap_or_default()),
-                        TableCell::new(format!("{:.3}s", run_duration)),
+                        TableCell::new(
+                            run_duration
+                                .map(|dur| format!("{:.3}s", dur))
+                                .unwrap_or("--".to_string())
+                        ),
                         TableCell::new(format!("{:.4}Wh", run_data.data.pow)),
                         TableCell::new(format!("{:.4}gWh", run_ci)),
                         TableCell::new(format!("{:.4}g", run_data.data.co2)),

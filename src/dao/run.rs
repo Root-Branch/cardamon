@@ -2,7 +2,7 @@ use crate::entities::run;
 use anyhow::{self, Context};
 use sea_orm::*;
 
-pub async fn fetch(id: i32, db: &DatabaseConnection) -> anyhow::Result<run::Model> {
+pub async fn fetch(id: &str, db: &DatabaseConnection) -> anyhow::Result<run::Model> {
     run::Entity::find()
         .filter(run::Column::Id.eq(id))
         .one(db)

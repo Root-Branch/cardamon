@@ -136,3 +136,7 @@ processes = ["test_proc"]
 [[observation]]
 name = "test_obs"
 scenarios = ["sleep"]
+
+[[observation]]
+name = "live_monitor"
+processes = ["test_proc"]

@@ -57,8 +57,8 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(
                         ColumnDef::new(Run::Id)
-                            .integer()
-                            .auto_increment()
+                            .string()
+                            .string_len(5)
                             .not_null()
                             .primary_key(),
                     )
@@ -70,7 +70,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(Run::CpuId).integer().not_null())
                     .col(ColumnDef::new(Run::StartTime).big_integer().not_null())
-                    .col(ColumnDef::new(Run::StopTime).big_integer().not_null())
+                    .col(ColumnDef::new(Run::StopTime).big_integer())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Run::Table, Run::CpuId)

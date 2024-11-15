@@ -175,7 +175,7 @@ impl<'a> ScenarioDataset<'a> {
 
                 ScenarioRunDataset {
                     scenario_name: self.scenario_name,
-                    run_id: *run_id,
+                    run_id: run_id.clone(),
                     data,
                 }
             })
@@ -242,7 +242,7 @@ impl<'a> ScenarioDataset<'a> {
 #[derive(Debug)]
 pub struct ScenarioRunDataset<'a> {
     scenario_name: &'a str,
-    run_id: i32,
+    run_id: String,
     data: Vec<&'a IterationMetrics>,
 }
 impl<'a> ScenarioRunDataset<'a> {
@@ -250,8 +250,8 @@ impl<'a> ScenarioRunDataset<'a> {
         self.scenario_name
     }
 
-    pub fn run_id(&'a self) -> i32 {
-        self.run_id
+    pub fn run_id(&'a self) -> String {
+        self.run_id.clone()
     }
 
     pub fn data(&'a self) -> &'a [&'a IterationMetrics] {
@@ -267,7 +267,7 @@ impl<'a> ScenarioRunDataset<'a> {
         db: &DatabaseConnection,
         model: &impl Fn(&Vec<&Metrics>, &Power, f64) -> Data,
     ) -> anyhow::Result<RunData> {
-        let run = dao::run::fetch(self.run_id, db).await?;
+        let run = dao::run::fetch(&self.run_id, db).await?;
         let cpu = run
             .find_related(entities::cpu::Entity)
             .one(db)
@@ -361,7 +361,7 @@ impl<'a> ScenarioRunDataset<'a> {
             .collect_vec();
 
         Ok(RunData {
-            run_id: self.run_id,
+            run_id: self.run_id.clone(),
             region: run.region,
             ci: run.carbon_intensity,
             start_time,
@@ -531,27 +531,27 @@ mod tests {
                     assert_eq!(scenario_run_datasets.len(), 1);
                     let run_ids = scenario_run_datasets
                         .iter()
-                        .map(|ds| ds.run_id)
+                        .map(|ds| ds.run_id.clone())
                         .collect::<Vec<_>>();
-                    assert_eq!(vec![1], run_ids);
+                    assert_eq!(vec!["1"], run_ids);
                 }
 
                 "scenario_2" => {
                     assert_eq!(scenario_run_datasets.len(), 2);
                     let run_ids = scenario_run_datasets
                         .iter()
-                        .map(|ds| ds.run_id)
+                        .map(|ds| ds.run_id.clone())
                         .collect::<Vec<_>>();
-                    assert_eq!(vec![2, 1], run_ids);
+                    assert_eq!(vec!["2", "1"], run_ids);
                 }
 
                 "scenario_3" => {
                     assert_eq!(scenario_run_datasets.len(), 3);
                     let run_ids = scenario_run_datasets
                         .iter()
-                        .map(|ds| ds.run_id)
+                        .map(|ds| ds.run_id.clone())
                         .collect::<Vec<_>>();
-                    assert_eq!(vec![3, 2, 1], run_ids);
+                    assert_eq!(vec!["3", "2", "1"], run_ids);
                 }
 
                 _ => panic!("unknown scenario in dataset!"),

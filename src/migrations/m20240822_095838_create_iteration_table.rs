@@ -19,7 +19,12 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Iteration::RunId).integer().not_null())
+                    .col(
+                        ColumnDef::new(Iteration::RunId)
+                            .string()
+                            .string_len(5)
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(Iteration::ScenarioName).string().not_null())
                     .col(ColumnDef::new(Iteration::Count).integer().not_null())
                     .col(
@@ -27,7 +32,7 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
-                    .col(ColumnDef::new(Iteration::StopTime).big_integer().not_null())
+                    .col(ColumnDef::new(Iteration::StopTime).big_integer())
                     .foreign_key(
                         ForeignKey::create()
                             .from(Iteration::Table, Iteration::RunId)

@@ -47,6 +47,7 @@ futures-util = "0.3.30"
 http = "1.1.0"
 itertools = "0.13.0"
 mime_guess = { version = "2.0.5" }
+nanoid = "0.4.0"
 num_cpus = "1.16.0"
 phf = { version = "0.11", features = ["macros"] }
 reqwest = { version = "0.12.7", features = ["json"] }
@@ -89,6 +90,3 @@ features = [
   "sqlx-sqlite",
   "sqlx-mysql",
 ]
-
-[dev-dependencies]
-nanoid = "0.4.0"

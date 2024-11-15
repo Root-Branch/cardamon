@@ -72,7 +72,7 @@ impl DatasetBuilder {
     }
 
     /// Returns all scenarios that were executed in a single run.
-    pub fn scenarios_in_run(&self, run: i32) -> DatasetRowPager {
+    pub fn scenarios_in_run(&self, run: &str) -> DatasetRowPager {
         DatasetRowPager {
             scenario_selection: ScenarioSelection::InRun(run.to_string()),
         }
@@ -295,7 +295,7 @@ impl DatasetBuilderFinal {
         let mut iterations_with_metrics = vec![];
         for it in iterations {
             let metrics =
-                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, db).await?;
+                dao::metrics::fetch_within(&it.run_id, it.start_time, it.stop_time, db).await?;
             iterations_with_metrics.push(IterationMetrics::new(it, metrics));
         }
         // println!("\n {:?}", iterations_with_metrics);
@@ -331,7 +331,7 @@ impl DatasetBuilderFinal {
         let mut iterations_with_metrics = vec![];
         for it in iterations {
             let metrics =
-                dao::metrics::fetch_within(it.run_id, it.start_time, it.stop_time, db).await?;
+                dao::metrics::fetch_within(&it.run_id, it.start_time, it.stop_time, db).await?;
             iterations_with_metrics.push(IterationMetrics::new(it, metrics));
         }
 
@@ -433,7 +433,7 @@ mod tests {
     async fn scenarios_in_run() -> anyhow::Result<()> {
         let db = init_tests().await?;
         let dataset = DatasetBuilder::new()
-            .scenarios_in_run(2)
+            .scenarios_in_run("2")
             .all()
             .runs_all()
             .all()
@@ -523,7 +523,7 @@ mod tests {
             .iter()
             .map(|dataset| dataset.run_id())
             .collect_vec();
-        assert_eq!(run_ids, vec![3, 2, 1]);
+        assert_eq!(run_ids, vec!["3", "2", "1"]);
 
         // multiple scenarios
         let dataset = DatasetBuilder::new()
@@ -545,7 +545,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_3");
-        assert_eq!(run_ids, vec![3, 2, 1]);
+        assert_eq!(run_ids, vec!["3", "2", "1"]);
 
         let scenario_dataset = scenario_datasets.get(1).unwrap();
         let run_datasets = scenario_dataset.by_run();
@@ -554,7 +554,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_2");
-        assert_eq!(run_ids, vec![2, 1]);
+        assert_eq!(run_ids, vec!["2", "1"]);
 
         let scenario_dataset = scenario_datasets.get(2).unwrap();
         let run_datasets = scenario_dataset.by_run();
@@ -563,7 +563,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_1");
-        assert_eq!(run_ids, vec![1]);
+        assert_eq!(run_ids, vec!["1"]);
 
         Ok(())
     }
@@ -589,7 +589,7 @@ mod tests {
             .iter()
             .map(|dataset| dataset.run_id())
             .collect_vec();
-        assert_eq!(run_ids, vec![3, 2]);
+        assert_eq!(run_ids, vec!["3", "2"]);
 
         // multiple scenarios
         let dataset = DatasetBuilder::new()
@@ -610,7 +610,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_3");
-        assert_eq!(run_ids, vec![3, 2]);
+        assert_eq!(run_ids, vec!["3", "2"]);
 
         let scenario_dataset = scenario_datasets.get(1).unwrap();
         let run_datasets = scenario_dataset.by_run();
@@ -619,7 +619,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_2");
-        assert_eq!(run_ids, vec![2]);
+        assert_eq!(run_ids, vec!["2"]);
 
         Ok(())
     }
@@ -645,7 +645,7 @@ mod tests {
             .iter()
             .map(|dataset| dataset.run_id())
             .collect_vec();
-        assert_eq!(run_ids, vec![3, 2]);
+        assert_eq!(run_ids, vec!["3", "2"]);
 
         // multiple scenarios
         let dataset = DatasetBuilder::new()
@@ -666,7 +666,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_3");
-        assert_eq!(run_ids, vec![3, 2]);
+        assert_eq!(run_ids, vec!["3", "2"]);
 
         let scenario_dataset = scenario_datasets.get(1).unwrap();
         let run_datasets = scenario_dataset.by_run();
@@ -675,7 +675,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_2");
-        assert_eq!(run_ids, vec![2, 1]);
+        assert_eq!(run_ids, vec!["2", "1"]);
 
         let scenario_dataset = scenario_datasets.get(2).unwrap();
         let run_datasets = scenario_dataset.by_run();
@@ -684,7 +684,7 @@ mod tests {
             .map(|dataset| dataset.run_id())
             .collect_vec();
         assert_eq!(scenario_dataset.scenario_name(), "scenario_1");
-        assert_eq!(run_ids, vec![1]);
+        assert_eq!(run_ids, vec!["1"]);
 
         Ok(())
     }

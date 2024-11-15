@@ -19,7 +19,12 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
-                    .col(ColumnDef::new(Metrics::RunId).integer().not_null())
+                    .col(
+                        ColumnDef::new(Metrics::RunId)
+                            .string()
+                            .string_len(5)
+                            .not_null(),
+                    )
                     .col(ColumnDef::new(Metrics::ProcessId).string().not_null())
                     .col(ColumnDef::new(Metrics::ProcessName).string().not_null())
                     .col(ColumnDef::new(Metrics::CpuUsage).double().not_null())

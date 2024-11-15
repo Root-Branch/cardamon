@@ -1,15 +1,9 @@
-use crate::{
-    execution_plan::ProcessToObserve,
-    metrics::{CpuMetrics, MetricsLog},
-};
+use crate::{execution_plan::ProcessToObserve, metrics::CpuMetrics};
 use chrono::Utc;
-use std::{
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::ops::Deref;
 use sysinfo::{Pid, System};
-use tokio::time::Duration;
-use tracing::trace;
+use tokio::{sync::mpsc, time::Duration};
+use tracing::{trace, warn};
 
 /// Enters an infinite loop logging metrics for each process to the metrics log. This function is
 /// intended to be called from `metrics_logger::log_scenario` or `metrics_logger::log_live`
@@ -30,18 +24,23 @@ use tracing::trace;
 /// This function does not return, it requires that it's thread is cancelled.
 pub async fn keep_logging(
     processes_to_observe: Vec<ProcessToObserve>,
-    metrics_log: Arc<Mutex<MetricsLog>>,
-) -> anyhow::Result<()> {
+    queue: mpsc::Sender<CpuMetrics>,
+) {
+    println!("poiu");
     let mut system = System::new_all();
 
     loop {
         tokio::time::sleep(Duration::from_millis(1000)).await;
+        println!("etryfhdg");
         system.refresh_all();
         for process_to_observe in processes_to_observe.iter() {
             match process_to_observe {
                 ProcessToObserve::ExternalPid(pid) => {
-                    let metrics = get_metrics(&mut system, *pid).await?;
-                    update_metrics_log(metrics, &metrics_log);
+                    if let Ok(metrics) = get_metrics(&mut system, *pid).await {
+                        if let Err(err) = queue.send(metrics).await {
+                            warn!("{}", err);
+                        }
+                    }
                 }
 
                 ProcessToObserve::ManagedPid {
@@ -49,9 +48,14 @@ pub async fn keep_logging(
                     pid,
                     down: _,
                 } => {
-                    let mut metrics = get_metrics(&mut system, *pid).await?;
-                    metrics.process_name = process_name.clone();
-                    update_metrics_log(metrics, &metrics_log);
+                    println!("{}", process_name);
+                    if let Ok(mut metrics) = get_metrics(&mut system, *pid).await {
+                        metrics.process_name = process_name.clone();
+                        println!("{:?}", metrics);
+                        if let Err(err) = queue.send(metrics).await {
+                            warn!("{}", err);
+                        }
+                    }
                 }
 
                 _ => panic!(),
@@ -60,14 +64,15 @@ pub async fn keep_logging(
     }
 }
 
-fn update_metrics_log(metrics: CpuMetrics, metrics_log: &Arc<Mutex<MetricsLog>>) {
-    metrics_log
-        .lock()
-        .expect("Should be able to acquire lock on metrics log")
-        .push_metrics(metrics);
-}
+// fn update_metrics_log(metrics: CpuMetrics, metrics_log: &Arc<Mutex<MetricsLog>>) {
+//     metrics_log
+//         .lock()
+//         .expect("Should be able to acquire lock on metrics log")
+//         .push_metrics(metrics);
+// }
 
 async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics> {
+    println!("hello");
     if let Some(process) = system.process(Pid::from_u32(pid)) {
         let core_count = num_cpus::get_physical() as i32;
 

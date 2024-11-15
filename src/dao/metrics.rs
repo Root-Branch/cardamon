@@ -3,20 +3,23 @@ use anyhow::{self, Context};
 use sea_orm::*;
 
 pub async fn fetch_within(
-    run: i32,
+    run_id: &str,
     from: i64,
-    to: i64,
+    to: Option<i64>,
     db: &DatabaseConnection,
 ) -> anyhow::Result<Vec<metrics::Model>> {
-    let query = metrics::Entity::find().filter(
-        Condition::all()
-            .add(metrics::Column::RunId.eq(run))
+    let query = metrics::Entity::find().filter(match to {
+        Some(to) => Condition::all()
+            .add(metrics::Column::RunId.eq(run_id))
             .add(metrics::Column::TimeStamp.gte(from))
             .add(metrics::Column::TimeStamp.lte(to)),
-    );
+        None => Condition::all()
+            .add(metrics::Column::RunId.eq(run_id))
+            .add(metrics::Column::TimeStamp.gte(from)),
+    });
 
     query.all(db).await.context(format!(
-        "Error fetching metrics gathered between: {} and {}",
+        "Error fetching metrics gathered between: {} and {:?}",
         from, to
     ))
 }
@@ -41,7 +44,8 @@ mod tests {
         )
         .await?;
 
-        let metrics = dao::metrics::fetch_within(1, 1717507600000, 1717507600200, &db).await?;
+        let metrics =
+            dao::metrics::fetch_within("1", 1717507600000, Some(1717507600200), &db).await?;
 
         assert_eq!(metrics.len(), 4);
 

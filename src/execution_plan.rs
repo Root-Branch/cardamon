@@ -62,6 +62,7 @@ pub fn create_execution_plan<'a>(
     cpu: Cpu,
     obs_name: &str,
     external_only: bool,
+    daemon: bool,
 ) -> anyhow::Result<ExecutionPlan<'a>> {
     let obs = config.find_observation(obs_name).context(format!(
         "Couldn't find an observation with name {}",
@@ -103,7 +104,14 @@ pub fn create_execution_plan<'a>(
                 let proc_names = processes.iter().collect_vec();
                 processes_to_execute = config.find_processes(&proc_names)?;
             }
-            ExecutionPlan::new(cpu, processes_to_execute, ExecutionMode::Live)
+
+            let exec_mode = if daemon {
+                ExecutionMode::Daemon
+            } else {
+                ExecutionMode::Live
+            };
+
+            ExecutionPlan::new(cpu, processes_to_execute, exec_mode)
         }
     };
 
@@ -126,7 +134,7 @@ mod tests {
             power: Power::Tdp(11.2),
         };
 
-        let exec_plan = create_execution_plan(&cfg, cpu, "checkout", false)?;
+        let exec_plan = create_execution_plan(&cfg, cpu, "checkout", false, false)?;
         match exec_plan.execution_mode {
             ExecutionMode::Observation(scenarios) => {
                 let scenario_names = scenarios
@@ -164,7 +172,7 @@ mod tests {
             power: Power::Tdp(11.2),
         };
 
-        let exec_plan = create_execution_plan(&cfg, cpu, "live_monitor", false)?;
+        let exec_plan = create_execution_plan(&cfg, cpu, "live_monitor", false, false)?;
         match exec_plan.execution_mode {
             ExecutionMode::Live => {
                 let process_names: Vec<&str> = exec_plan

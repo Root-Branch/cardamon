@@ -11,12 +11,13 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use colored::*;
 use itertools::*;
-use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, TryIntoModel};
+use nanoid::nanoid;
+use sea_orm::{ActiveModelTrait, ActiveValue, DatabaseConnection, IntoActiveModel};
 use term_table::{row, row::Row, rows, table_cell::*, Table, TableStyle};
 use tracing::info;
 
 pub async fn run_scenario<'a>(
-    run_id: i32,
+    run_id: &str,
     scenario: &Scenario,
     iteration: i32,
 ) -> anyhow::Result<iteration::ActiveModel> {
@@ -47,11 +48,11 @@ pub async fn run_scenario<'a>(
 
         let scenario_iteration = iteration::ActiveModel {
             id: ActiveValue::NotSet,
-            run_id: ActiveValue::Set(run_id),
+            run_id: ActiveValue::Set(run_id.to_string()),
             scenario_name: ActiveValue::Set(scenario.name.clone()),
             count: ActiveValue::Set(iteration),
             start_time: ActiveValue::Set(start),
-            stop_time: ActiveValue::Set(stop),
+            stop_time: ActiveValue::Set(Some(stop)),
         };
         Ok(scenario_iteration)
     } else {
@@ -75,20 +76,23 @@ pub async fn run_scenarios<'a>(
     let start_time = Utc::now().timestamp_millis();
 
     // create a new run
+    let run_id = nanoid!(5, &nanoid::alphabet::SAFE);
     let mut active_run = run::ActiveModel {
-        id: ActiveValue::NotSet,
+        id: ActiveValue::Set(run_id.clone()),
         is_live: ActiveValue::Set(false),
         cpu_id: ActiveValue::Set(cpu_id),
         region: ActiveValue::Set(region.clone()),
         carbon_intensity: ActiveValue::Set(ci),
         start_time: ActiveValue::Set(start_time),
-        stop_time: ActiveValue::set(start_time), // set to start time for now we'll update it later
+        stop_time: ActiveValue::set(None),
     }
-    .save(db)
-    .await?;
+    .insert(db)
+    .await?
+    .into_active_model();
 
     // get the new run id
-    let run_id = active_run.clone().try_into_model()?.id;
+    // let run_id = active_run.clone().try_into_model()?.id;
+    println!("{}", &run_id);
 
     // ---- for each scenario ----
     for scenario in scenarios {
@@ -102,15 +106,18 @@ pub async fn run_scenarios<'a>(
             );
 
             // start the metrics loggers
-            let stop_handle = metrics_logger::start_logging(processes_to_observe.clone())?;
+            let stop_handle = metrics_logger::start_logging(
+                processes_to_observe.clone(),
+                run_id.clone(),
+                db.clone(),
+            )?;
 
             // run the scenario
-            let scenario_iteration = run_scenario(run_id, &scenario, iteration).await?;
+            let scenario_iteration = run_scenario(&run_id, &scenario, iteration).await?;
             scenario_iteration.save(db).await?;
 
             // stop the metrics loggers
-            let metrics_log = stop_handle.stop().await?;
-            metrics_log.save(run_id, db).await?;
+            stop_handle.stop().await;
         }
     }
 
@@ -118,14 +125,14 @@ pub async fn run_scenarios<'a>(
                                                    // timezones
 
     // update run with the stop time
-    active_run.stop_time = ActiveValue::Set(stop_time);
+    active_run.stop_time = ActiveValue::Set(Some(stop_time));
     active_run.save(db).await?;
 
     // stop the application
     shutdown_processes(&processes_to_observe)?;
 
     // create a dataset containing the data just collected
-    let observation_dataset_rows = DatasetBuilder::new().scenarios_in_run(run_id).all();
+    let observation_dataset_rows = DatasetBuilder::new().scenarios_in_run(&run_id).all();
     let observation_dataset = observation_dataset_rows
         .last_n_runs(5)
         .all()
@@ -178,7 +185,12 @@ pub async fn run_scenarios<'a>(
                 ],
                 row![
                     TableCell::new(format!("{}", run_data.region.clone().unwrap_or_default())),
-                    TableCell::new(format!("{:.3}s", run_data.duration())),
+                    TableCell::new(
+                        run_data
+                            .duration()
+                            .map(|dur| format!("{:.3}s", dur))
+                            .unwrap_or("--".to_string())
+                    ),
                     TableCell::new(format!("{:.3}Wh", run_data.data.pow)),
                     TableCell::new(format!("{:.3}gWh", run_data.ci)),
                     TableCell::new(format!("{:.3}g", run_data.data.co2)),

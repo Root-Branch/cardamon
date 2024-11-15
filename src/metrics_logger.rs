@@ -1,30 +1,22 @@
 pub mod bare_metal;
 pub mod docker;
 
-use crate::{execution_plan::ProcessToObserve, metrics::MetricsLog};
-use std::sync::{Arc, Mutex};
-use tokio::task::JoinSet;
+use crate::{execution_plan::ProcessToObserve, metrics::CpuMetrics};
+use sea_orm::*;
+use std::time::Duration;
+use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
 pub struct StopHandle {
-    pub token: CancellationToken,
+    token: CancellationToken,
     pub join_set: JoinSet<()>,
-    pub shared_metrics_log: Arc<Mutex<MetricsLog>>,
 }
 impl StopHandle {
-    fn new(
-        token: CancellationToken,
-        join_set: JoinSet<()>,
-        shared_metrics_log: Arc<Mutex<MetricsLog>>,
-    ) -> Self {
-        Self {
-            token,
-            join_set,
-            shared_metrics_log,
-        }
+    fn new(token: CancellationToken, join_set: JoinSet<()>) -> Self {
+        Self { token, join_set }
     }
 
-    pub async fn stop(mut self) -> anyhow::Result<MetricsLog> {
+    pub async fn stop(mut self) {
         // cancel loggers
         self.token.cancel();
         loop {
@@ -32,21 +24,23 @@ impl StopHandle {
                 break;
             }
         }
+    }
+}
 
-        // take ownership of metrics log
-        let metrics_log = Arc::try_unwrap(self.shared_metrics_log)
-            .expect("Mutex guarding metrics_log shouldn't have multiple owners!")
-            .into_inner()
-            .expect("Should be able to take ownership of metrics_log");
-
-        // return error if metrics log contains any errors
-        if metrics_log.has_errors() {
-            return Err(anyhow::anyhow!(
-                "Metrics log contains errors, please check trace"
-            ));
+async fn keep_saving(
+    queue_rx: &mut mpsc::Receiver<CpuMetrics>,
+    run_id: &str,
+    db: &DatabaseConnection,
+) {
+    loop {
+        if let Some(metrics) = queue_rx.recv().await {
+            println!("{:?}", metrics);
+            let _ = metrics.into_active_model(run_id).save(db).await;
+        } else {
+            println!("damn it!")
         }
 
-        Ok(metrics_log)
+        let _ = tokio::time::sleep(Duration::from_secs(2));
     }
 }
 
@@ -60,11 +54,11 @@ impl StopHandle {
 ///
 /// A `Result` containing the metrics log for the given scenario or an `Error` if either
 /// the scenario failed to complete successfully or any of the loggers contained errors.
-pub fn start_logging(processes_to_observe: Vec<ProcessToObserve>) -> anyhow::Result<StopHandle> {
-    let metrics_log = MetricsLog::new();
-    let metrics_log_mutex = Mutex::new(metrics_log);
-    let shared_metrics_log = Arc::new(metrics_log_mutex);
-
+pub fn start_logging(
+    processes_to_observe: Vec<ProcessToObserve>,
+    run_id: String,
+    db: DatabaseConnection,
+) -> anyhow::Result<StopHandle> {
     // split processes into bare metal & docker processes
     let mut a: Vec<ProcessToObserve> = vec![];
     let mut b: Vec<ProcessToObserve> = vec![];
@@ -86,42 +80,58 @@ pub fn start_logging(processes_to_observe: Vec<ProcessToObserve>) -> anyhow::Res
         }
     }
 
+    println!("{:?} {:?}", a, b);
+
+    // create async queue
+    let (queue_tx, mut queue_rx) = mpsc::channel::<CpuMetrics>(100);
+
     // create a new cancellation token
-    let token = CancellationToken::new();
+    let cancellation_token = CancellationToken::new();
+
+    // create a new join set for the poducer and consumer threads
+    let mut join_set = JoinSet::new();
+
+    // start thread to consume metrics
+    let token = cancellation_token.clone();
+    join_set.spawn(async move {
+        tokio::select! {
+            _ = token.cancelled() => {
+                while let Some(metrics) = queue_rx.recv().await {
+                    let _ = metrics.into_active_model(&run_id).save(&db).await;
+                }
+            }
+            _ = keep_saving(&mut queue_rx, &run_id, &db) => {}
+        }
+    });
 
     // start threads to collect metrics
-    let mut join_set = JoinSet::new();
     if !a.is_empty() {
-        let token = token.clone();
-        let shared_metrics_log = shared_metrics_log.clone();
+        let token = cancellation_token.clone();
+        let queue = queue_tx.clone();
+
         tracing::debug!("Spawning bare metal thread");
+        println!("ghjk");
         join_set.spawn(async move {
             tracing::info!("Logging PIDs: {:?}", a);
             tokio::select! {
                 _ = token.cancelled() => {}
-                _ = bare_metal::keep_logging(
-                        a,
-                        shared_metrics_log,
-                    ) => {}
+                _ = bare_metal::keep_logging(a, queue) => {}
             }
         });
     }
 
     if !b.is_empty() {
-        let token = token.clone();
-        let shared_metrics_log = shared_metrics_log.clone();
+        let token = cancellation_token.clone();
+        let queue = queue_tx.clone();
 
         join_set.spawn(async move {
             tracing::info!("Logging containers: {:?}", b);
             tokio::select! {
-                            _ = token.cancelled() => {}
-                            _ = docker::keep_logging(
-                                    b,
-            shared_metrics_log,
-                                 ) => {}
-                         }
+                _ = token.cancelled() => {}
+                _ = docker::keep_logging(b, queue) => {}
+            }
         });
     }
 
-    Ok(StopHandle::new(token, join_set, shared_metrics_log))
+    Ok(StopHandle::new(cancellation_token, join_set))
 }

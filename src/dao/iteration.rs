@@ -270,7 +270,7 @@ pub async fn fetch_runs_last_n(
     }
 }
 
-pub async fn fetch_live(run_id: i32, db: &DatabaseConnection) -> anyhow::Result<iteration::Model> {
+pub async fn fetch_live(run_id: &str, db: &DatabaseConnection) -> anyhow::Result<iteration::Model> {
     iteration::Entity::find()
         .filter(iteration::Column::RunId.eq(run_id))
         .one(db)
@@ -304,9 +304,9 @@ mod tests {
 
         let run_ids = scenario_iterations
             .iter()
-            .map(|run| run.run_id)
+            .map(|run| run.run_id.clone())
             .collect::<Vec<_>>();
-        assert_eq!(run_ids, vec![1]);
+        assert_eq!(run_ids, vec!["1"]);
 
         let iterations = scenario_iterations
             .iter()
@@ -321,9 +321,9 @@ mod tests {
 
         let run_ids = scenario_iterations
             .iter()
-            .map(|run| run.run_id)
+            .map(|run| run.run_id.clone())
             .collect::<Vec<_>>();
-        assert_eq!(run_ids, vec![3, 3, 3, 2, 2, 2]);
+        assert_eq!(run_ids, vec!["3", "3", "3", "2", "2", "2"]);
 
         let iterations = scenario_iterations
             .iter()

@@ -76,7 +76,7 @@ pub struct ProcessResponse {
 pub struct RunResponse {
     pub region: Option<String>,
     pub start_time: i64,
-    pub duration: f64,
+    pub duration: Option<f64>,
     pub pow: f64,
     pub co2: f64,
     pub ci: f64,

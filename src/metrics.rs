@@ -39,7 +39,7 @@ impl MetricsLog {
         self.log.clear();
     }
 
-    pub async fn save(&self, run_id: i32, db: &DatabaseConnection) -> anyhow::Result<()> {
+    pub async fn save(&self, run_id: &str, db: &DatabaseConnection) -> anyhow::Result<()> {
         // if metrics log contains errors then display them to the user and don't save anything
         if self.has_errors() {
             // log all the errors
@@ -71,10 +71,10 @@ pub struct CpuMetrics {
     pub timestamp: i64,
 }
 impl CpuMetrics {
-    pub fn into_active_model(&self, run_id: i32) -> metrics::ActiveModel {
+    pub fn into_active_model(&self, run_id: &str) -> metrics::ActiveModel {
         metrics::ActiveModel {
             id: ActiveValue::NotSet,
-            run_id: ActiveValue::Set(run_id),
+            run_id: ActiveValue::Set(run_id.to_string()),
             process_id: ActiveValue::Set(self.process_id.clone()),
             process_name: ActiveValue::Set(self.process_name.clone()),
             cpu_usage: ActiveValue::Set(self.cpu_usage),

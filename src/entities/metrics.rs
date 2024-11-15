@@ -7,7 +7,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    pub run_id: i32,
+    pub run_id: String,
     pub process_id: String,
     pub process_name: String,
     #[sea_orm(column_type = "Double")]
