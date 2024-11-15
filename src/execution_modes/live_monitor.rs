@@ -47,7 +47,6 @@ pub async fn run_live<'a>(
     iteration.save(db).await?;
 
     // start the metrics logger
-    println!("wat!!");
     let mut stop_handle =
         metrics_logger::start_logging(processes_to_observe.clone(), run_id.clone(), db.clone())?;
 

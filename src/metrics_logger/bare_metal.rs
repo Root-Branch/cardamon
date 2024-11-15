@@ -26,12 +26,10 @@ pub async fn keep_logging(
     processes_to_observe: Vec<ProcessToObserve>,
     queue: mpsc::Sender<CpuMetrics>,
 ) {
-    println!("poiu");
     let mut system = System::new_all();
 
     loop {
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        println!("etryfhdg");
         system.refresh_all();
         for process_to_observe in processes_to_observe.iter() {
             match process_to_observe {
@@ -48,7 +46,6 @@ pub async fn keep_logging(
                     pid,
                     down: _,
                 } => {
-                    println!("{}", process_name);
                     if let Ok(mut metrics) = get_metrics(&mut system, *pid).await {
                         metrics.process_name = process_name.clone();
                         println!("{:?}", metrics);
@@ -72,7 +69,6 @@ pub async fn keep_logging(
 // }
 
 async fn get_metrics(system: &mut System, pid: u32) -> anyhow::Result<CpuMetrics> {
-    println!("hello");
     if let Some(process) = system.process(Pid::from_u32(pid)) {
         let core_count = num_cpus::get_physical() as i32;
 

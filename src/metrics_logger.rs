@@ -36,10 +36,7 @@ async fn keep_saving(
         if let Some(metrics) = queue_rx.recv().await {
             println!("{:?}", metrics);
             let _ = metrics.into_active_model(run_id).save(db).await;
-        } else {
-            println!("damn it!")
         }
-
         let _ = tokio::time::sleep(Duration::from_secs(2));
     }
 }
@@ -80,8 +77,6 @@ pub fn start_logging(
         }
     }
 
-    println!("{:?} {:?}", a, b);
-
     // create async queue
     let (queue_tx, mut queue_rx) = mpsc::channel::<CpuMetrics>(100);
 
@@ -110,7 +105,6 @@ pub fn start_logging(
         let queue = queue_tx.clone();
 
         tracing::debug!("Spawning bare metal thread");
-        println!("ghjk");
         join_set.spawn(async move {
             tracing::info!("Logging PIDs: {:?}", a);
             tokio::select! {

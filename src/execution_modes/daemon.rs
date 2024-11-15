@@ -8,6 +8,7 @@ use axum::{
     Json, Router,
 };
 use chrono::Utc;
+use colored::Colorize;
 use sea_orm::*;
 use serde::{self, Deserialize};
 use tokio::sync::mpsc;
@@ -57,7 +58,6 @@ pub async fn run_daemon(
     let region = region.clone();
 
     tokio::spawn(async move {
-        println!("asdfasdfasdfasdfasdfasdfasdf");
         loop {
             let mut run_id: String = "".to_string();
 
@@ -159,7 +159,10 @@ pub async fn run_daemon(
         .with_state(tx.clone());
 
     // Start the Axum server
-    println!("Server running at http://localhost:3030");
+    println!(
+        "> waiting for start/stop signals on {}",
+        "http://localhost:3030".green()
+    );
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", 3030))
         .await
         .unwrap();
